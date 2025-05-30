@@ -1,4 +1,4 @@
-# Expression for dumping attributes.
+/* Expression for dumping attributes. */
 let
   traverseAttrs =
     { attrs
