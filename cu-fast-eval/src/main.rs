@@ -1,14 +1,13 @@
-use AsRef::{self};
 use std::cmp;
-use std::env;
 use std::fs;
 use std::process::Command;
 use std::process::Stdio;
 use serde::{Deserialize, Serialize};
 
+use cu_fast_eval::*;
+
 use clap::Parser;
 use rayon::prelude::*;
-use shlex::{self};
 
 // Allow hardcoding a specific `nix-instantiate` at build-time, obviating the need for a wrapper.
 const COMMAND_NIX_INSTANTIATE: &str =
@@ -26,51 +25,6 @@ const NIX_EXPR_CLI_IMPORT: &str = include_str!("nix/cli-import.nix");
 // It's also sufficiently big that on a single-system Nixpkgs eval, it's bigger
 // than `attributes.len() / 16`.
 const DEFAULT_MAX_ALLOWABLE_PER_CHUNK: usize = 16_000;
-
-fn get_env_int(name: &str) -> Result<Option<usize>, String> {
-    match env::var(name) {
-        Ok(value) => {
-            if !value.is_empty() {
-                match value.parse::<usize>() {
-                    Ok(value) => { Ok(Some(value)) }
-                    Err(err) => { Err(format!("{} needs to be an integer. ({})", name, err)) }
-                }
-            }
-            else {
-                Ok(None)
-            }
-        }
-        Err(err) => {
-            match err {
-                env::VarError::NotPresent => { Ok(None) }
-                _ => { Err(format!("Unexpected error while handling {} environment variable. {}", name, err)) }
-            }
-        }
-    }
-}
-
-// Prints (to stderr) a formatted useful version of the command used.
-// NOTE: Multi-line arguments will be elided to their first line!
-fn log_command(cmd: &Command) {
-    let args: Vec<String> =
-        cmd
-            .get_args().map( |s| {
-                let mut lines =
-                    s.to_str().unwrap()
-                    .lines()
-                ;
-                let first = lines.next().unwrap();
-                match lines.next() {
-                    // Only one line.
-                    None => { first.to_string() }
-                    // Multi-line
-                    Some(_) => { format!("{}…", first) }
-                }
-            })
-            .collect()
-    ;
-    eprintln!(" $ {}", shlex::try_join(args.iter().map(AsRef::as_ref).collect::<Vec<&str>>()).unwrap())
-}
 
 /// Returns a list of attr *paths* (lists of lists of attribute name parts).
 fn get_attributes(common_args: &Vec<String>) -> Result<AttributePaths, Box<dyn std::error::Error>> {
