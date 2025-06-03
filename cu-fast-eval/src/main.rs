@@ -365,6 +365,25 @@ fn main() -> Result<(), String> {
         .map(|chunk_path| {
             let chunk_path = chunk_path.to_str().unwrap();
 
+            //
+            // TODO: Implement recovering from *fatal* evaluation errors.
+            // This can be achieved by
+            //   (1) making the `process::exit()` into an error type return
+            //   (2) making the `chunk_paths` handling a queue that can be filled during execution
+            //   (3) if more than one argument in chunk
+            //         split the chunk in two parts, re-queue
+            //       else
+            //         mark as a fatal evaluation failure
+            //
+            // NOTE: A normal Nixpkgs evaluation from a successful channel should never hit a fatal
+            //       evaluation failure, or else something went wrong with CI.
+            //
+            // This will slow down evaluation in the exceptional case where there is a fatal
+            // evaluation failure, but since we are already chunking it will still be quick enough,
+            // as long as we're not hitting the pathological case of every attribute failing.
+            // In that case, this could take longer than evaluating the attribute set in a serial
+            // manner. Though this shouldn't happen.
+            //
             let data: EvaluationData =
                 evaluate_chunk(&common_args, chunk_path)
                     .unwrap_or_else(|_| panic!("Unexpected error while handling chunk {}", chunk_path))
