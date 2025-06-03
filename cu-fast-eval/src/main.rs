@@ -10,6 +10,14 @@ use clap::Parser;
 use rayon::prelude::*;
 use shlex::{self};
 
+// Allow hardcoding a specific `nix-instantiate` at build-time, obviating the need for a wrapper.
+const COMMAND_NIX_INSTANTIATE: &str =
+    match option_env!("COMMAND_NIX_INSTANTIATE") {
+        Some(v) => v,
+        None => "nix-instantiate",
+    }
+;
+
 const NIX_EXPR_DUMP_ATTRIBUTES: &str = include_str!("nix/dump-attributes.nix");
 const NIX_EXPR_PROCESS_CHUNK: &str = include_str!("nix/process-chunk.nix");
 
@@ -64,10 +72,10 @@ fn log_command(cmd: &Command) {
 }
 
 /// Returns a list of attr *paths* (lists of lists of attribute name parts).
-fn get_attributes(nix_args: &Option<Vec<String>>) -> serde_json::Result<AttributePaths> {
+fn get_attributes(nix_args: &Option<Vec<String>>) -> Result<AttributePaths, Box<dyn std::error::Error>> {
     eprintln!("\n:: Evaluating attribtues\n");
 
-    let mut cmd = Command::new("nix-instantiate");
+    let mut cmd = Command::new(COMMAND_NIX_INSTANTIATE);
     cmd
         .arg("--strict")
         .arg("--json")
@@ -84,17 +92,22 @@ fn get_attributes(nix_args: &Option<Vec<String>>) -> serde_json::Result<Attribut
         // Stream stderr to the console
         .stderr(Stdio::inherit())
         // Capture the output
-        .output()
-        .expect("Unexpected error while running nix-instantiate")
+        .output()?
     ;
+
+    // If the command failed *in a controlled manner*, 
+    if !result.status.success() {
+        std::process::exit(result.status.code().unwrap());
+    }
 
     // Parse result
     serde_json::from_str(&String::from_utf8_lossy(&result.stdout))
+        .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
 }
 
 /// Returns the serde_json Array of serde_json Objects for the evaluated list of Nix attribute sets.
-fn evaluate_chunk(nix_args: &Option<Vec<String>>, path: &str) -> serde_json::Result<serde_json::Value> {
-    let mut cmd = Command::new("nix-instantiate");
+fn evaluate_chunk(nix_args: &Option<Vec<String>>, path: &str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let mut cmd = Command::new(COMMAND_NIX_INSTANTIATE);
     cmd
         .arg("--strict")
         .arg("--json")
@@ -115,12 +128,17 @@ fn evaluate_chunk(nix_args: &Option<Vec<String>>, path: &str) -> serde_json::Res
         // Stream stderr to the console
         .stderr(Stdio::inherit())
         // Capture the output
-        .output()
-        .expect("Error while running nix-instantiate")
+        .output()?
     ;
+
+    // If the command failed *in a controlled manner*, 
+    if !result.status.success() {
+        std::process::exit(result.status.code().unwrap());
+    }
 
     // Parse result
     serde_json::from_str(&String::from_utf8_lossy(&result.stdout))
+        .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
 }
 
 type AttributePath = Vec<String>;
