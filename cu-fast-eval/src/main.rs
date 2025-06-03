@@ -20,6 +20,7 @@ const COMMAND_NIX_INSTANTIATE: &str =
 
 const NIX_EXPR_DUMP_ATTRIBUTES: &str = include_str!("nix/dump-attributes.nix");
 const NIX_EXPR_PROCESS_CHUNK: &str = include_str!("nix/process-chunk.nix");
+const NIX_EXPR_CLI_IMPORT: &str = include_str!("nix/cli-import.nix");
 
 // This is arbitrary, but looked like a good boundary for memory consumption.
 // It's also sufficiently big that on a single-system Nixpkgs eval, it's bigger
@@ -72,7 +73,7 @@ fn log_command(cmd: &Command) {
 }
 
 /// Returns a list of attr *paths* (lists of lists of attribute name parts).
-fn get_attributes(nix_args: &Option<Vec<String>>) -> Result<AttributePaths, Box<dyn std::error::Error>> {
+fn get_attributes(common_args: &Vec<String>) -> Result<AttributePaths, Box<dyn std::error::Error>> {
     eprintln!("\n:: Evaluating attribtues\n");
 
     let mut cmd = Command::new(COMMAND_NIX_INSTANTIATE);
@@ -80,10 +81,9 @@ fn get_attributes(nix_args: &Option<Vec<String>>) -> Result<AttributePaths, Box<
         .arg("--strict")
         .arg("--json")
         .arg("--eval")
+        .args(common_args)
         .args(["--expr", NIX_EXPR_DUMP_ATTRIBUTES])
     ;
-
-    if let Some(args) = nix_args { cmd.args(args); };
 
     log_command(&cmd);
 
@@ -106,17 +106,15 @@ fn get_attributes(nix_args: &Option<Vec<String>>) -> Result<AttributePaths, Box<
 }
 
 /// Returns the serde_json Array of serde_json Objects for the evaluated list of Nix attribute sets.
-fn evaluate_chunk(nix_args: &Option<Vec<String>>, path: &str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+fn evaluate_chunk(common_args: &Vec<String>, path: &str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     let mut cmd = Command::new(COMMAND_NIX_INSTANTIATE);
     cmd
         .arg("--strict")
         .arg("--json")
         .arg("--eval")
+        .args(common_args)
         .args(["--expr", NIX_EXPR_PROCESS_CHUNK])
     ;
-
-    // Add the user's arguments
-    if let Some(args) = nix_args { cmd.args(args); };
 
     // Ensure `chunkPath` is the one we are passing to `nix-instantiate`.
     cmd.args(["--arg", "chunkPath", path]);
@@ -166,6 +164,9 @@ impl EvaluationResults {
 #[derive(Parser, Debug)]
 #[command(version)]
 struct Args {
+
+    // Arguments affecting this tool's non-nix semantics.
+
     #[arg(long)]
     /// Filename to save the results. [default: <stdout>]
     output: Option<String>,
@@ -175,18 +176,39 @@ struct Args {
     #[arg(long, default_value_t = DEFAULT_MAX_ALLOWABLE_PER_CHUNK)]
     /// Maximum size for a chunk.
     max_chunk_size: usize,
+
+    // Arguments affecting this tool's evaluation
+
+    #[arg(long, default_value = "value: (value.recurseForDerivations or false) != false")]
+    /// Nix expression to determine whether to recurse in an attrset or not.
+    ///
+    /// The default follows the Nixpkgs conventions.
+    recurse_with: String,
+
+    /// Nix expression to determine whether to keep the value or not.
+    ///
+    /// The default keeps only derivations.
+    #[arg(long, default_value = "value: builtins.isAttrs value && value ? drvPath")]
+    filter_with: String,
+
+    // Arguments affecting the user's input
+
+    #[arg(short = 'E', long = "expr")]
+    /// Interpret <file> as an expression to evaluate.
+    is_expression: bool,
+
     #[arg(long = "arg", num_args = 2, action = clap::ArgAction::Append, value_names = ["NAME", "VALUE"])]
     /// Arguments passed directly to `nix-instantiate` as `--arg name value`
     nix_args: Option<Vec<String>>,
-}
 
-fn nix_args_pair_to_cli(pair: Vec<String>) -> Vec<String> {
-    let mut args = Vec::new();
-    args.push("--arg".to_string());
-    for arg in pair {
-        args.push(arg.to_string())
-    }
-    args
+    /// Expression to evaluate, follows the standard Nix CLI semantics.
+    file: Option<String>,
+
+    // Arguments affecting Nix operation
+
+    /// Whether to print a stack trace in case of Nix expression evaluation errors.
+    #[arg(long)]
+    show_trace: bool,
 }
 
 fn main() -> Result<(), String> {
@@ -194,16 +216,93 @@ fn main() -> Result<(), String> {
     let workdir = tempfile::tempdir().unwrap();
 
     let mut args = Args::parse();
+    let mut common_args: Vec<String> = Vec::new();
 
-    // Transform `NAME VALUE` back into `--arg NAME VALUE`.
-    if args.nix_args.is_some() {
-        args.nix_args = Some(
-            args.nix_args.unwrap()
-                .chunks(2)
-                .flat_map(|pair| nix_args_pair_to_cli(pair.to_vec()))
-                .collect::<Vec<String>>()
-                .to_vec()
-        );
+    //
+    // Build the CLI invocation for `nix-instantiate`.
+    //
+
+    if args.is_expression && args.file.is_none() {
+        eprintln!("error: An expression must be given with `--expr`.");
+        std::process::exit(1);
+    }
+
+    // Arguments for the user's input.
+    let expression_arguments =
+        match args.nix_args {
+            Some(args) => {
+                // Transform `NAME VALUE` pairs into `{ NAME = VALUE; } attrs`.
+                let attrset_body = args.chunks(2)
+                    .map(|pair| {
+                        let [name, value] = pair else { unreachable!() };
+                        format!("{0} = ({1});", serde_json::json!(&name), value)
+                    })
+                    .collect::<Vec<String>>()
+                    .join("\n")
+                ;
+                format!("{{\n{}\n}}", attrset_body)
+
+            },
+            None => {"{}".to_string()},
+        }
+    ;
+
+    // The expression the user wants to see evaluated.
+    // We need to wrap arguments handling in here.
+    let expression_input =
+        if args.is_expression && args.file.is_some() {
+            // For an expression, we drop the value in place.
+            args.file.unwrap()
+        }
+        else {
+            // We are handling paths, or maybe the default case.
+            match args.file {
+                // NOTE: By using a stringified string for the path (via JSON formatting), we can can ignore
+                // marshalling the value to an "actual" path value, as long as we check for absolute or relative paths.
+                Some(v) => {
+                    // Convert argument to a Nix string (by using the fact JSON strings are pretty much
+                    // drop-in compatible with Nix strings).
+                    let as_string: String = serde_json::json!(&v).to_string();
+
+                    if v.starts_with("/") {
+                        // Directly use absolute paths as a string
+                        as_string
+                    }
+                    else if v.starts_with("<") {
+                        // Directly use angled bracket paths
+                        v
+                    }
+                    else {
+                        // Paste given path with `${./.}/`, making an absolute path out of a relative one.
+                        format!(r#"./. + "/" + {}"#, as_string)
+                    }
+                }
+                None => { "./.".to_string() }
+            }
+        }
+    ;
+
+    let expression_code =
+        format!("({0}) ({1}) ({2})", NIX_EXPR_CLI_IMPORT, expression_input, expression_arguments)
+    ;
+
+    // This is the attribute set being evaluated.
+    common_args.push("--arg".to_string());
+    common_args.push("attrs".to_string());
+    common_args.push(expression_code);
+
+    // The function used to determine if recursing is needed.
+    common_args.push("--arg".to_string());
+    common_args.push("recurse".to_string());
+    common_args.push(args.recurse_with);
+
+    // The function used to determine if an attribute is kept.
+    common_args.push("--arg".to_string());
+    common_args.push("filter".to_string());
+    common_args.push(args.filter_with);
+
+    if args.show_trace {
+        common_args.push("--show-trace".to_string());
     }
 
     // No value? Use PROCESSOR_COUNT if available. This is part of the public API.
@@ -223,7 +322,7 @@ fn main() -> Result<(), String> {
     // Let rayon tell us what ended-up being chosen.
     let cores = rayon::current_num_threads();
 
-    let attributes = get_attributes(&args.nix_args).unwrap();
+    let attributes = get_attributes(&common_args).unwrap();
     // The smallest between:
     //  - The maximum allowable attributes per chunks
     //  - The natural distributed chunk size
@@ -267,7 +366,7 @@ fn main() -> Result<(), String> {
             let chunk_path = chunk_path.to_str().unwrap();
 
             let data: EvaluationData =
-                evaluate_chunk(&args.nix_args, chunk_path)
+                evaluate_chunk(&common_args, chunk_path)
                     .unwrap_or_else(|_| panic!("Unexpected error while handling chunk {}", chunk_path))
                     .as_array()
                     .unwrap_or_else(|| panic!("Unexpected error while handling chunk {}", chunk_path))
