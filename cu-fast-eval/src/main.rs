@@ -435,6 +435,8 @@ fn main() -> Result<(), String> {
         .collect_vec_list()
     ;
 
+    eprintln!("\n:: Writing output...\n");
+
     let io: Box<dyn std::io::Write> = match args.output {
         Some(path) => {
             Box::new(std::fs::File::create(&path).unwrap())
