@@ -436,13 +436,12 @@ fn main() -> Result<(), String> {
                 data,
             }
         })
-        .fold(||{ EvaluationResults::new() }, |mut acc, mut curr| {
+        .reduce(||{ EvaluationResults::new() }, |mut acc, mut curr| {
             acc.good_attributes.append(&mut curr.good_attributes);
             acc.bad_attributes.append(&mut curr.bad_attributes);
             acc.data.append(&mut curr.data);
             acc
         })
-        .collect_vec_list()
     ;
 
     eprintln!("\n:: Writing output...\n");
