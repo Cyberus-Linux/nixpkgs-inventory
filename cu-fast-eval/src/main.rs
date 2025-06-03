@@ -194,7 +194,7 @@ struct Args {
     // Arguments affecting the user's input
 
     #[arg(short = 'E', long = "expr")]
-    /// Interpret <file> as an expression to evaluate.
+    /// Interpret [FILE] as an expression to evaluate.
     is_expression: bool,
 
     #[arg(long = "arg", num_args = 2, action = clap::ArgAction::Append, value_names = ["NAME", "VALUE"])]
@@ -202,6 +202,16 @@ struct Args {
     nix_args: Option<Vec<String>>,
 
     /// Expression to evaluate, follows the standard Nix CLI semantics.
+    ///
+    ///  - When no file argument is given, defaults to `./default.nix`.
+    ///  - When an angled-bracket argument is given, follows `NIX_PATH` resolution.
+    ///  - When a relative path is given, relative to CWD.
+    ///  - When an absolute path is given, used as-is.
+    ///
+    /// The `--expr` argument changes the interpretation of `[FILE]`.
+    ///
+    ///  - The given string is used as a Nix expression to evaluated.
+    #[arg(verbatim_doc_comment)]
     file: Option<String>,
 
     // Arguments affecting Nix operation
