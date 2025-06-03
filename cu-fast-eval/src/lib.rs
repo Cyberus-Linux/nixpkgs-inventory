@@ -1,4 +1,5 @@
 use std::env;
+use std::path::Path;
 use std::process::Command;
 
 pub fn get_env_int(name: &str) -> Result<Option<usize>, String> {
@@ -41,8 +42,15 @@ pub fn log_command(cmd: &Command) {
             }
         })
         .collect();
+
+    let exe_name = Path::new(cmd.get_program())
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap();
     eprintln!(
-        " $ {}",
+        " $ {} {}",
+        shlex::try_quote(exe_name).unwrap(),
         shlex::try_join(args.iter().map(AsRef::as_ref).collect::<Vec<&str>>()).unwrap()
     )
 }
