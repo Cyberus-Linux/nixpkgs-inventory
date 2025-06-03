@@ -40,6 +40,6 @@
       "packages"
       "self"
     ];
-    dev-shell = callPackage ./dev-shell.nix {};
+    dev-shell = callPackage ./dev-shell.nix { inherit subprojects; };
   }
 )).self

@@ -1,5 +1,6 @@
 { lib
 , rustPlatform
+, writeShellScriptBin
 
 , name
 , src
@@ -19,4 +20,12 @@ rustPlatform.buildRustPackage (finalAttrs: {
 
   inherit src;
   inherit cargoHash;
+
+  passthru = {
+    # Provide a default development shell helper to "just" run the command.
+    dev-runner = writeShellScriptBin name ''
+      PS4=" $ "; set -x
+      exec cargo run --bin "${name}" -- "$@"
+    '';
+  };
 })
