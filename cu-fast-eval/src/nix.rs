@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::process::Command;
 use std::process::Stdio;
 
@@ -5,6 +6,12 @@ use crate::log_command;
 
 pub type AttributePath = Vec<String>;
 pub type AttributePaths = Vec<AttributePath>;
+pub type NixCliExpressionArguments = HashMap<String, String>;
+
+pub enum NixCliExpression {
+    Expression(Option<String>),
+    Path(Option<String>),
+}
 
 // Allow hardcoding a specific `nix-instantiate` at build-time, obviating the need for a wrapper.
 pub const COMMAND_NIX_INSTANTIATE: &str = match option_env!("COMMAND_NIX_INSTANTIATE") {
@@ -12,8 +19,64 @@ pub const COMMAND_NIX_INSTANTIATE: &str = match option_env!("COMMAND_NIX_INSTANT
     None => "nix-instantiate",
 };
 
+const NIX_EXPR_CLI_IMPORT: &str = include_str!("nix/cli-import.nix");
 const NIX_EXPR_DUMP_ATTRIBUTES: &str = include_str!("nix/dump-attributes.nix");
 const NIX_EXPR_PROCESS_CHUNK: &str = include_str!("nix/process-chunk.nix");
+
+/// Returns a nix expression fragment that evaluates an expression with the same semantics as the
+/// standard nix-* CLI tools would.
+pub fn build_nix_cli_import_semantics_fragment(
+    expression: NixCliExpression,
+    arguments: NixCliExpressionArguments,
+) -> Result<String, String> {
+    let expression_arguments = {
+        let attrset_body = arguments
+            .iter()
+            .map(|(name, value)| format!("{0} = ({1});", serde_json::json!(&name), value))
+            .collect::<Vec<String>>()
+            .join("\n");
+        format!("{{\n{}\n}}", attrset_body)
+    };
+
+    // The expression the user wants to see evaluated.
+    // We need to wrap arguments handling in here.
+    let expression_input = match expression {
+        // The expression flag without a value is an error.
+        NixCliExpression::Expression(None) => {
+            return Err("An expression must be given with `--expr`.".to_string());
+        }
+        // For an expression, we drop the value in place.
+        NixCliExpression::Expression(Some(expr)) => expr,
+        NixCliExpression::Path(None) => "./.".to_string(),
+        // We are handling paths, or maybe the default case.
+        NixCliExpression::Path(Some(v)) => {
+            // Convert argument to a Nix string (by using the fact JSON strings are pretty much
+            // drop-in compatible with Nix strings).
+            let as_string: String = serde_json::json!(&v).to_string();
+            // NOTE: By using a stringified string for the path (via JSON formatting), we can can ignore
+            // marshalling the value to an "actual" path value, as long as we check for absolute or relative paths.
+
+            // Directly use absolute paths as a string
+            if v.starts_with("/") {
+                as_string
+            }
+            // Directly use angled bracket paths
+            else if v.starts_with("<") {
+                v
+            }
+            // Paste given path with `${./.}/`, making an absolute path out of a relative one.
+            // (Yes, the formatting string looks hard to parse, because we need to escape `${}`.)
+            else {
+                format!(r#"./. + "/${{{0}}}""#, as_string)
+            }
+        }
+    };
+
+    Ok(format!(
+        "({0}) ({1}) ({2})",
+        NIX_EXPR_CLI_IMPORT, expression_input, expression_arguments
+    ))
+}
 
 /// Returns a list of attr *paths* (lists of lists of attribute name parts).
 pub fn get_attributes(

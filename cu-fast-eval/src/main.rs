@@ -3,12 +3,10 @@ use std::fs;
 use serde::{Deserialize, Serialize};
 
 use cu_fast_eval::{get_env_int};
-use cu_fast_eval::nix::{AttributePaths, get_attributes, evaluate_chunk};
+use cu_fast_eval::nix::{AttributePaths, get_attributes, evaluate_chunk, build_nix_cli_import_semantics_fragment, NixCliExpression, NixCliExpressionArguments};
 
 use clap::Parser;
 use rayon::prelude::*;
-
-const NIX_EXPR_CLI_IMPORT: &str = include_str!("nix/cli-import.nix");
 
 // This is arbitrary, but looked like a good boundary for memory consumption.
 // It's also sufficiently big that on a single-system Nixpkgs eval, it's bigger
@@ -105,74 +103,10 @@ fn main() -> Result<(), String> {
     // Build the CLI invocation for `nix-instantiate`.
     //
 
-    if args.is_expression && args.file.is_none() {
-        eprintln!("error: An expression must be given with `--expr`.");
-        std::process::exit(1);
+    // Misc. arguments
+    if args.show_trace {
+        common_args.push("--show-trace".to_string());
     }
-
-    // Arguments for the user's input.
-    let expression_arguments =
-        match args.nix_args {
-            Some(args) => {
-                // Transform `NAME VALUE` pairs into `{ NAME = VALUE; } attrs`.
-                let attrset_body = args.chunks(2)
-                    .map(|pair| {
-                        let [name, value] = pair else { unreachable!() };
-                        format!("{0} = ({1});", serde_json::json!(&name), value)
-                    })
-                    .collect::<Vec<String>>()
-                    .join("\n")
-                ;
-                format!("{{\n{}\n}}", attrset_body)
-
-            },
-            None => {"{}".to_string()},
-        }
-    ;
-
-    // The expression the user wants to see evaluated.
-    // We need to wrap arguments handling in here.
-    let expression_input =
-        if args.is_expression && args.file.is_some() {
-            // For an expression, we drop the value in place.
-            args.file.unwrap()
-        }
-        else {
-            // We are handling paths, or maybe the default case.
-            match args.file {
-                // NOTE: By using a stringified string for the path (via JSON formatting), we can can ignore
-                // marshalling the value to an "actual" path value, as long as we check for absolute or relative paths.
-                Some(v) => {
-                    // Convert argument to a Nix string (by using the fact JSON strings are pretty much
-                    // drop-in compatible with Nix strings).
-                    let as_string: String = serde_json::json!(&v).to_string();
-
-                    if v.starts_with("/") {
-                        // Directly use absolute paths as a string
-                        as_string
-                    }
-                    else if v.starts_with("<") {
-                        // Directly use angled bracket paths
-                        v
-                    }
-                    else {
-                        // Paste given path with `${./.}/`, making an absolute path out of a relative one.
-                        format!(r#"./. + "/" + {}"#, as_string)
-                    }
-                }
-                None => { "./.".to_string() }
-            }
-        }
-    ;
-
-    let expression_code =
-        format!("({0}) ({1}) ({2})", NIX_EXPR_CLI_IMPORT, expression_input, expression_arguments)
-    ;
-
-    // This is the attribute set being evaluated.
-    common_args.push("--arg".to_string());
-    common_args.push("attrs".to_string());
-    common_args.push(expression_code);
 
     // The function used to determine if recursing is needed.
     common_args.push("--arg".to_string());
@@ -184,9 +118,42 @@ fn main() -> Result<(), String> {
     common_args.push("filter".to_string());
     common_args.push(args.filter_with);
 
-    if args.show_trace {
-        common_args.push("--show-trace".to_string());
-    }
+    // This is the attribute set being evaluated.
+    common_args.push("--arg".to_string());
+    common_args.push("attrs".to_string());
+    common_args.push({
+        let expression_input =
+            if args.is_expression {
+                NixCliExpression::Expression(args.file)
+            }
+            else {
+                NixCliExpression::Path(args.file)
+            }
+        ;
+
+        let expression_arguments = {
+            let mut ret = NixCliExpressionArguments::new();
+            match args.nix_args {
+                Some(args) => {
+                    // Transform `NAME VALUE` pairs into NixCliExpressionArguments values
+                    for pair in args.chunks(2) {
+                        let [name, value] = pair else { unreachable!() };
+                        ret.insert(name.to_string(), value.to_string());
+                    }
+                },
+                None => { /* no-op */ },
+            }
+            ret
+        };
+
+        // This represents the "user input".
+        // The frament produced here is equivalent to the nix-* CLI semantics.
+        build_nix_cli_import_semantics_fragment(expression_input, expression_arguments)
+            .unwrap_or_else(|msg| {
+                eprintln!("error: {}", msg);
+                std::process::exit(1);
+            })
+    });
 
     // No value? Use PROCESSOR_COUNT if available. This is part of the public API.
     if args.cores.is_none() {
