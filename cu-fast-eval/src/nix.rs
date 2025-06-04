@@ -48,3 +48,45 @@ pub fn get_attributes(common_args: &Vec<String>) -> Result<AttributePaths, Box<d
     serde_json::from_str(&String::from_utf8_lossy(&result.stdout))
         .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn check_get_attributes_empty() {
+        let empty: AttributePaths = vec![];
+        let args = vec![
+            "--show-trace",
+            "--arg", "attrs", "{}",
+        ].into_iter().map(|s| s.to_string()).collect();
+        let result = get_attributes(&args).unwrap();
+        assert_eq!(result, empty);
+    }
+    #[test]
+    fn check_get_attributes_single() {
+        let single: AttributePaths = vec![vec!["a".to_string()]];
+        let args = vec![
+            "--show-trace",
+            "--arg", "attrs", r#"{ a = 1; }"#,
+        ].into_iter().map(|s| s.to_string()).collect();
+        let result = get_attributes(&args).unwrap();
+        assert_eq!(result, single);
+    }
+    #[test]
+    fn check_get_attributes_recursive() {
+        let recursive: AttributePaths = vec![
+            vec!["a".to_string()],
+            vec!["a".to_string(), "b".to_string()],
+            vec!["c".to_string()],
+            vec!["c".to_string(), "d".to_string()],
+        ];
+        let args = vec![
+            "--show-trace",
+            "--arg", "recurse", r#"_: true"#,
+            "--arg", "attrs", r#"{ a.b = 1; c.d = builtins.throw "ok"; }"#,
+        ].into_iter().map(|s| s.to_string()).collect();
+        let result = get_attributes(&args).unwrap();
+        assert_eq!(result, recursive);
+    }
+}
