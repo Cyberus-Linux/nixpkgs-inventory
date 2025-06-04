@@ -1,9 +1,12 @@
+use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::fs;
-use serde::{Deserialize, Serialize};
 
-use cu_fast_eval::{get_env_int};
-use cu_fast_eval::nix::{AttributePaths, get_attributes, evaluate_chunk, build_nix_cli_import_semantics_fragment, NixCliExpression, NixCliExpressionArguments};
+use cu_fast_eval::get_env_int;
+use cu_fast_eval::nix::{
+    AttributePaths, NixCliExpression, NixCliExpressionArguments,
+    build_nix_cli_import_semantics_fragment, evaluate_chunk, get_attributes,
+};
 
 use clap::Parser;
 use rayon::prelude::*;
@@ -16,17 +19,16 @@ const DEFAULT_MAX_ALLOWABLE_PER_CHUNK: usize = 16_000;
 type EvaluationData = Vec<serde_json::Value>;
 
 #[derive(Serialize, Deserialize)]
+/// Results of an evaluation, according to this too.
 struct EvaluationResults {
-    good_attributes: AttributePaths,
-    bad_attributes: AttributePaths,
+    attributes_with_errors: AttributePaths,
     data: EvaluationData,
 }
 
 impl EvaluationResults {
     pub fn new() -> Self {
         Self {
-            good_attributes: Vec::new(),
-            bad_attributes: Vec::new(),
+            attributes_with_errors: Vec::new(),
             data: EvaluationData::new(),
         }
     }
@@ -35,9 +37,7 @@ impl EvaluationResults {
 #[derive(Parser, Debug)]
 #[command(version)]
 struct Args {
-
     // Arguments affecting this tool's non-nix semantics.
-
     #[arg(long)]
     /// Filename to save the results. [default: <stdout>]
     output: Option<String>,
@@ -49,8 +49,10 @@ struct Args {
     max_chunk_size: usize,
 
     // Arguments affecting this tool's evaluation
-
-    #[arg(long, default_value = "value: (value.recurseForDerivations or false) != false")]
+    #[arg(
+        long,
+        default_value = "value: (value.recurseForDerivations or false) != false"
+    )]
     /// Nix expression to determine whether to recurse in an attrset or not.
     ///
     /// The default follows the Nixpkgs conventions.
@@ -59,11 +61,13 @@ struct Args {
     /// Nix expression to determine whether to keep the value or not.
     ///
     /// The default keeps only derivations.
-    #[arg(long, default_value = "value: builtins.isAttrs value && value ? drvPath")]
+    #[arg(
+        long,
+        default_value = "value: builtins.isAttrs value && value ? drvPath"
+    )]
     filter_with: String,
 
     // Arguments affecting the user's input
-
     #[arg(short = 'E', long = "expr")]
     /// Interpret [FILE] as an expression to evaluate.
     is_expression: bool,
@@ -86,7 +90,6 @@ struct Args {
     file: Option<String>,
 
     // Arguments affecting Nix operation
-
     /// Whether to print a stack trace in case of Nix expression evaluation errors.
     #[arg(long)]
     show_trace: bool,
@@ -122,14 +125,11 @@ fn main() -> Result<(), String> {
     common_args.push("--arg".to_string());
     common_args.push("attrs".to_string());
     common_args.push({
-        let expression_input =
-            if args.is_expression {
-                NixCliExpression::Expression(args.file)
-            }
-            else {
-                NixCliExpression::Path(args.file)
-            }
-        ;
+        let expression_input = if args.is_expression {
+            NixCliExpression::Expression(args.file)
+        } else {
+            NixCliExpression::Path(args.file)
+        };
 
         let expression_arguments = {
             let mut ret = NixCliExpressionArguments::new();
@@ -140,8 +140,8 @@ fn main() -> Result<(), String> {
                         let [name, value] = pair else { unreachable!() };
                         ret.insert(name.to_string(), value.to_string());
                     }
-                },
-                None => { /* no-op */ },
+                }
+                None => { /* no-op */ }
             }
             ret
         };
@@ -166,7 +166,10 @@ fn main() -> Result<(), String> {
 
     // Got a specific configuration?
     if args.cores.is_some() {
-        rayon::ThreadPoolBuilder::new().num_threads(args.cores.unwrap()).build_global().unwrap();
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(args.cores.unwrap())
+            .build_global()
+            .unwrap();
     }
 
     // Let rayon tell us what ended-up being chosen.
@@ -187,19 +190,16 @@ fn main() -> Result<(), String> {
     }
 
     // Evaluate attribute names, and turn into chunks of JSON, as files.
-    let chunk_paths: Vec<_> =
-        attributes
+    let chunk_paths: Vec<_> = attributes
         .chunks(args.max_chunk_size)
         .enumerate()
         .map(|(i, chunk)| {
             let path = workdir.path().join(format!("eval-chunk.{:08}.json", i));
             fs::write(&path, serde_json::to_string_pretty(&chunk).unwrap())
-                .expect("Error while writing attributes to file...")
-            ;
+                .expect("Error while writing attributes to file...");
             path
         })
-        .collect()
-    ;
+        .collect();
 
     eprintln!("\n");
     eprintln!(":: Cores: {}", cores);
@@ -234,70 +234,60 @@ fn main() -> Result<(), String> {
             // In that case, this could take longer than evaluating the attribute set in a serial
             // manner. Though this shouldn't happen.
             //
-            let data: EvaluationData =
-                evaluate_chunk(&common_args, chunk_path)
-                    .unwrap_or_else(|_| panic!("Unexpected error while handling chunk {}", chunk_path))
-                    .as_array()
-                    .unwrap_or_else(|| panic!("Unexpected error while handling chunk {}", chunk_path))
-                    .to_vec()
-            ;
+            let data: EvaluationData = evaluate_chunk(&common_args, chunk_path)
+                .unwrap_or_else(|_| panic!("Unexpected error while handling chunk {}", chunk_path))
+                .as_array()
+                .unwrap_or_else(|| panic!("Unexpected error while handling chunk {}", chunk_path))
+                .to_vec();
 
             let file = fs::File::open(chunk_path)
-                .expect("Unexpected error while opening JSON chunk information...")
-            ;
+                .expect("Unexpected error while opening JSON chunk information...");
             let chunk_attributes: AttributePaths = serde_json::from_reader(file)
-                .expect("Unexpected error while parsing JSON chunk information...")
-            ;
+                .expect("Unexpected error while parsing JSON chunk information...");
 
-            let good_attributes = data.iter()
+            let good_attributes = data
+                .iter()
                 .map(|entry| {
                     serde_json::from_value(
-                        entry.get("attrPath")
+                        entry
+                            .get("attrPath")
                             .expect("Expecting key `attrPath` on evaluation results attribute set.")
-                            .clone()
+                            .clone(),
                     )
                     .unwrap()
                 })
                 .collect::<AttributePaths>()
-                .to_vec()
-            ;
+                .to_vec();
 
-            let bad_attributes = chunk_attributes.into_iter()
-                .filter(|el| {
-                    !good_attributes.contains(el)
-                })
+            let attributes_with_errors = chunk_attributes
+                .into_iter()
+                .filter(|el| !good_attributes.contains(el))
                 .collect::<AttributePaths>()
-                .to_vec()
-            ;
+                .to_vec();
 
             EvaluationResults {
-                good_attributes,
-                bad_attributes,
+                attributes_with_errors,
                 data,
             }
         })
-        .reduce(||{ EvaluationResults::new() }, |mut acc, mut curr| {
-            acc.good_attributes.append(&mut curr.good_attributes);
-            acc.bad_attributes.append(&mut curr.bad_attributes);
-            acc.data.append(&mut curr.data);
-            acc
-        })
-    ;
+        .reduce(
+            || EvaluationResults::new(),
+            |mut acc, mut curr| {
+                acc.attributes_with_errors
+                    .append(&mut curr.attributes_with_errors);
+                acc.data.append(&mut curr.data);
+                acc
+            },
+        );
 
     eprintln!("\n:: Writing output...\n");
 
     let io: Box<dyn std::io::Write> = match args.output {
-        Some(path) => {
-            Box::new(std::fs::File::create(&path).unwrap())
-        }
-        None => {
-            Box::new(std::io::stdout())
-        }
+        Some(path) => Box::new(std::fs::File::create(&path).unwrap()),
+        None => Box::new(std::io::stdout()),
     };
 
-    serde_json::to_writer_pretty(io, &result)
-        .expect("Error while writing results...")
-    ;
+    serde_json::to_writer_pretty(io, &result).expect("Error while writing results...");
 
     Ok(())
 }
