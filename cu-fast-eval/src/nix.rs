@@ -15,6 +15,7 @@ pub const COMMAND_NIX_INSTANTIATE: &str =
 ;
 
 const NIX_EXPR_DUMP_ATTRIBUTES: &str = include_str!("nix/dump-attributes.nix");
+const NIX_EXPR_PROCESS_CHUNK: &str = include_str!("nix/process-chunk.nix");
 
 /// Returns a list of attr *paths* (lists of lists of attribute name parts).
 pub fn get_attributes(common_args: &Vec<String>) -> Result<AttributePaths, Box<dyn std::error::Error>> {
@@ -28,6 +29,40 @@ pub fn get_attributes(common_args: &Vec<String>) -> Result<AttributePaths, Box<d
         .args(common_args)
         .args(["--expr", NIX_EXPR_DUMP_ATTRIBUTES])
     ;
+
+    log_command(&cmd);
+
+    let result =
+        cmd
+        // Stream stderr to the console
+        .stderr(Stdio::inherit())
+        // Capture the output
+        .output()?
+    ;
+
+    // If the command failed *in a controlled manner*, 
+    if !result.status.success() {
+        std::process::exit(result.status.code().unwrap());
+    }
+
+    // Parse result
+    serde_json::from_str(&String::from_utf8_lossy(&result.stdout))
+        .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
+}
+
+/// Returns the serde_json Array of serde_json Objects for the evaluated list of Nix attribute sets.
+pub fn evaluate_chunk(common_args: &Vec<String>, path: &str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let mut cmd = Command::new(COMMAND_NIX_INSTANTIATE);
+    cmd
+        .arg("--strict")
+        .arg("--json")
+        .arg("--eval")
+        .args(common_args)
+        .args(["--expr", NIX_EXPR_PROCESS_CHUNK])
+    ;
+
+    // Ensure `chunkPath` is the one we are passing to `nix-instantiate`.
+    cmd.args(["--arg", "chunkPath", path]);
 
     log_command(&cmd);
 

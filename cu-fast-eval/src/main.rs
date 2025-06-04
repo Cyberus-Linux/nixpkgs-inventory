@@ -1,56 +1,19 @@
 use std::cmp;
 use std::fs;
-use std::process::Command;
-use std::process::Stdio;
 use serde::{Deserialize, Serialize};
 
-use cu_fast_eval::{log_command,get_env_int};
-use cu_fast_eval::nix::{COMMAND_NIX_INSTANTIATE, AttributePaths, get_attributes};
+use cu_fast_eval::{get_env_int};
+use cu_fast_eval::nix::{AttributePaths, get_attributes, evaluate_chunk};
 
 use clap::Parser;
 use rayon::prelude::*;
 
-const NIX_EXPR_PROCESS_CHUNK: &str = include_str!("nix/process-chunk.nix");
 const NIX_EXPR_CLI_IMPORT: &str = include_str!("nix/cli-import.nix");
 
 // This is arbitrary, but looked like a good boundary for memory consumption.
 // It's also sufficiently big that on a single-system Nixpkgs eval, it's bigger
 // than `attributes.len() / 16`.
 const DEFAULT_MAX_ALLOWABLE_PER_CHUNK: usize = 16_000;
-
-/// Returns the serde_json Array of serde_json Objects for the evaluated list of Nix attribute sets.
-fn evaluate_chunk(common_args: &Vec<String>, path: &str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
-    let mut cmd = Command::new(COMMAND_NIX_INSTANTIATE);
-    cmd
-        .arg("--strict")
-        .arg("--json")
-        .arg("--eval")
-        .args(common_args)
-        .args(["--expr", NIX_EXPR_PROCESS_CHUNK])
-    ;
-
-    // Ensure `chunkPath` is the one we are passing to `nix-instantiate`.
-    cmd.args(["--arg", "chunkPath", path]);
-
-    log_command(&cmd);
-
-    let result =
-        cmd
-        // Stream stderr to the console
-        .stderr(Stdio::inherit())
-        // Capture the output
-        .output()?
-    ;
-
-    // If the command failed *in a controlled manner*, 
-    if !result.status.success() {
-        std::process::exit(result.status.code().unwrap());
-    }
-
-    // Parse result
-    serde_json::from_str(&String::from_utf8_lossy(&result.stdout))
-        .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
-}
 
 type EvaluationData = Vec<serde_json::Value>;
 
