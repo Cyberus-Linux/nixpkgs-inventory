@@ -1,46 +1,42 @@
 use std::process::Command;
 use std::process::Stdio;
 
-use crate::{log_command};
+use crate::log_command;
 
 pub type AttributePath = Vec<String>;
 pub type AttributePaths = Vec<AttributePath>;
 
 // Allow hardcoding a specific `nix-instantiate` at build-time, obviating the need for a wrapper.
-pub const COMMAND_NIX_INSTANTIATE: &str =
-    match option_env!("COMMAND_NIX_INSTANTIATE") {
-        Some(v) => v,
-        None => "nix-instantiate",
-    }
-;
+pub const COMMAND_NIX_INSTANTIATE: &str = match option_env!("COMMAND_NIX_INSTANTIATE") {
+    Some(v) => v,
+    None => "nix-instantiate",
+};
 
 const NIX_EXPR_DUMP_ATTRIBUTES: &str = include_str!("nix/dump-attributes.nix");
 const NIX_EXPR_PROCESS_CHUNK: &str = include_str!("nix/process-chunk.nix");
 
 /// Returns a list of attr *paths* (lists of lists of attribute name parts).
-pub fn get_attributes(common_args: &Vec<String>) -> Result<AttributePaths, Box<dyn std::error::Error>> {
+pub fn get_attributes(
+    common_args: &Vec<String>,
+) -> Result<AttributePaths, Box<dyn std::error::Error>> {
     eprintln!("\n:: Evaluating attribtues\n");
 
     let mut cmd = Command::new(COMMAND_NIX_INSTANTIATE);
-    cmd
-        .arg("--strict")
+    cmd.arg("--strict")
         .arg("--json")
         .arg("--eval")
         .args(common_args)
-        .args(["--expr", NIX_EXPR_DUMP_ATTRIBUTES])
-    ;
+        .args(["--expr", NIX_EXPR_DUMP_ATTRIBUTES]);
 
     log_command(&cmd);
 
-    let result =
-        cmd
+    let result = cmd
         // Stream stderr to the console
         .stderr(Stdio::inherit())
         // Capture the output
-        .output()?
-    ;
+        .output()?;
 
-    // If the command failed *in a controlled manner*, 
+    // If the command failed *in a controlled manner*,
     if !result.status.success() {
         std::process::exit(result.status.code().unwrap());
     }
@@ -51,30 +47,29 @@ pub fn get_attributes(common_args: &Vec<String>) -> Result<AttributePaths, Box<d
 }
 
 /// Returns the serde_json Array of serde_json Objects for the evaluated list of Nix attribute sets.
-pub fn evaluate_chunk(common_args: &Vec<String>, path: &str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+pub fn evaluate_chunk(
+    common_args: &Vec<String>,
+    path: &str,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     let mut cmd = Command::new(COMMAND_NIX_INSTANTIATE);
-    cmd
-        .arg("--strict")
+    cmd.arg("--strict")
         .arg("--json")
         .arg("--eval")
         .args(common_args)
-        .args(["--expr", NIX_EXPR_PROCESS_CHUNK])
-    ;
+        .args(["--expr", NIX_EXPR_PROCESS_CHUNK]);
 
     // Ensure `chunkPath` is the one we are passing to `nix-instantiate`.
     cmd.args(["--arg", "chunkPath", path]);
 
     log_command(&cmd);
 
-    let result =
-        cmd
+    let result = cmd
         // Stream stderr to the console
         .stderr(Stdio::inherit())
         // Capture the output
-        .output()?
-    ;
+        .output()?;
 
-    // If the command failed *in a controlled manner*, 
+    // If the command failed *in a controlled manner*,
     if !result.status.success() {
         std::process::exit(result.status.code().unwrap());
     }
@@ -92,20 +87,20 @@ mod tests {
     #[test]
     fn check_get_attributes_empty() {
         let empty: AttributePaths = vec![];
-        let args = vec![
-            "--show-trace",
-            "--arg", "attrs", "{}",
-        ].into_iter().map(|s| s.to_string()).collect();
+        let args = vec!["--show-trace", "--arg", "attrs", "{}"]
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect();
         let result = get_attributes(&args).unwrap();
         assert_eq!(result, empty);
     }
     #[test]
     fn check_get_attributes_single() {
         let single: AttributePaths = vec![vec!["a".to_string()]];
-        let args = vec![
-            "--show-trace",
-            "--arg", "attrs", r#"{ a = 1; }"#,
-        ].into_iter().map(|s| s.to_string()).collect();
+        let args = vec!["--show-trace", "--arg", "attrs", r#"{ a = 1; }"#]
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect();
         let result = get_attributes(&args).unwrap();
         assert_eq!(result, single);
     }
@@ -119,9 +114,16 @@ mod tests {
         ];
         let args = vec![
             "--show-trace",
-            "--arg", "recurse", r#"_: true"#,
-            "--arg", "attrs", r#"{ a.b = 1; c.d = builtins.throw "ok"; }"#,
-        ].into_iter().map(|s| s.to_string()).collect();
+            "--arg",
+            "recurse",
+            r#"_: true"#,
+            "--arg",
+            "attrs",
+            r#"{ a.b = 1; c.d = builtins.throw "ok"; }"#,
+        ]
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect();
         let result = get_attributes(&args).unwrap();
         assert_eq!(result, recursive);
     }
@@ -129,22 +131,19 @@ mod tests {
     #[test]
     fn check_evaluate_chunk() {
         let workdir = tempfile::tempdir().unwrap();
-        let path_binding = workdir
-            .path()
-            .join(format!("eval-chunk.{:08}.json", 1234))
-        ;
-        let path = path_binding
-            .to_str()
-            .unwrap()
-        ;
+        let path_binding = workdir.path().join(format!("eval-chunk.{:08}.json", 1234));
+        let path = path_binding.to_str().unwrap();
         let chunk = vec![vec!["a"], vec!["b"], vec!["c", "d"]];
         fs::write(path, serde_json::to_string_pretty(&chunk).unwrap())
-            .expect("Error while writing attributes to file...")
-        ;
+            .expect("Error while writing attributes to file...");
         let args = vec![
             "--show-trace",
-            "--arg", "filter", "v: true",
-            "--arg", "attrs", r#"
+            "--arg",
+            "filter",
+            "v: true",
+            "--arg",
+            "attrs",
+            r#"
                 let
                     mkDrv =
                         name:
@@ -157,7 +156,10 @@ mod tests {
                 in
                 { a = mkDrv "1"; b = mkDrv "2"; c = { d = mkDrv "4"; }; }
             "#,
-        ].into_iter().map(|s| s.to_string()).collect();
+        ]
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect();
         let result = evaluate_chunk(&args, path).unwrap();
 
         // FIXME: This is unlikely to be fun to work with.
