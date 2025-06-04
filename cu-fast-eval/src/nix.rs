@@ -87,6 +87,7 @@ pub fn evaluate_chunk(common_args: &Vec<String>, path: &str) -> Result<serde_jso
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn check_get_attributes_empty() {
@@ -123,5 +124,49 @@ mod tests {
         ].into_iter().map(|s| s.to_string()).collect();
         let result = get_attributes(&args).unwrap();
         assert_eq!(result, recursive);
+    }
+
+    #[test]
+    fn check_evaluate_chunk() {
+        let workdir = tempfile::tempdir().unwrap();
+        let path_binding = workdir
+            .path()
+            .join(format!("eval-chunk.{:08}.json", 1234))
+        ;
+        let path = path_binding
+            .to_str()
+            .unwrap()
+        ;
+        let chunk = vec![vec!["a"], vec!["b"], vec!["c", "d"]];
+        fs::write(path, serde_json::to_string_pretty(&chunk).unwrap())
+            .expect("Error while writing attributes to file...")
+        ;
+        let args = vec![
+            "--show-trace",
+            "--arg", "filter", "v: true",
+            "--arg", "attrs", r#"
+                let
+                    mkDrv =
+                        name:
+                        derivation {
+                            inherit name;
+                            builder = "bogus";
+                            system = "bogus";
+                        }
+                    ;
+                in
+                { a = mkDrv "1"; b = mkDrv "2"; c = { d = mkDrv "4"; }; }
+            "#,
+        ].into_iter().map(|s| s.to_string()).collect();
+        let result = evaluate_chunk(&args, path).unwrap();
+
+        // FIXME: This is unlikely to be fun to work with.
+        // TODO: evaluate_chunk should take an argument to transform values.
+        // We will then return simpler values than full-blown derivations.
+        // We can then move the "hard" Nix logic regarding evaluating the derivations outside of evaluate_chunk.
+        assert_eq!(
+            result.to_string(),
+            "[{\"attrPath\":[\"a\"],\"drvPath\":\"/nix/store/5nvz1xv9gfmw01gf6hjzylffa2d7291m-1.drv\",\"meta\":null,\"name\":\"1\",\"outputs\":{\"out\":\"/nix/store/fpdknchlh3hdwrgd3xfm3ficb25f8081-1\"},\"pname\":null,\"version\":null},{\"attrPath\":[\"b\"],\"drvPath\":\"/nix/store/5f6qc7qz5i4gcvifhkl0fiwy7jzi5f5v-2.drv\",\"meta\":null,\"name\":\"2\",\"outputs\":{\"out\":\"/nix/store/dwh9k5gaxxg2fwa1i0190nzykfmkwycq-2\"},\"pname\":null,\"version\":null},{\"attrPath\":[\"c\",\"d\"],\"drvPath\":\"/nix/store/0g2qnbsfz15lhdcrw3acj4c77sd3qhk3-4.drv\",\"meta\":null,\"name\":\"4\",\"outputs\":{\"out\":\"/nix/store/gw834zp0bifxd7n4v9m7pn0kd3wjyypd-4\"},\"pname\":null,\"version\":null}]"
+        );
     }
 }

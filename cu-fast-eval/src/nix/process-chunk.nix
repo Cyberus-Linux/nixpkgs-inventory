@@ -83,8 +83,6 @@ let
                       (deriv.outputs or [ deriv.outputName ])
                     )
                 ;
-                # Filled after the fact
-                inputDrvs = null;
                 # Get the meta from the derivation
                 meta = deriv.meta or null;
               }
