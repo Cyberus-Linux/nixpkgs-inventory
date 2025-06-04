@@ -4,20 +4,12 @@ use std::process::Command;
 use std::process::Stdio;
 use serde::{Deserialize, Serialize};
 
-use cu_fast_eval::*;
+use cu_fast_eval::{log_command,get_env_int};
+use cu_fast_eval::nix::{COMMAND_NIX_INSTANTIATE, AttributePaths, get_attributes};
 
 use clap::Parser;
 use rayon::prelude::*;
 
-// Allow hardcoding a specific `nix-instantiate` at build-time, obviating the need for a wrapper.
-const COMMAND_NIX_INSTANTIATE: &str =
-    match option_env!("COMMAND_NIX_INSTANTIATE") {
-        Some(v) => v,
-        None => "nix-instantiate",
-    }
-;
-
-const NIX_EXPR_DUMP_ATTRIBUTES: &str = include_str!("nix/dump-attributes.nix");
 const NIX_EXPR_PROCESS_CHUNK: &str = include_str!("nix/process-chunk.nix");
 const NIX_EXPR_CLI_IMPORT: &str = include_str!("nix/cli-import.nix");
 
@@ -25,39 +17,6 @@ const NIX_EXPR_CLI_IMPORT: &str = include_str!("nix/cli-import.nix");
 // It's also sufficiently big that on a single-system Nixpkgs eval, it's bigger
 // than `attributes.len() / 16`.
 const DEFAULT_MAX_ALLOWABLE_PER_CHUNK: usize = 16_000;
-
-/// Returns a list of attr *paths* (lists of lists of attribute name parts).
-fn get_attributes(common_args: &Vec<String>) -> Result<AttributePaths, Box<dyn std::error::Error>> {
-    eprintln!("\n:: Evaluating attribtues\n");
-
-    let mut cmd = Command::new(COMMAND_NIX_INSTANTIATE);
-    cmd
-        .arg("--strict")
-        .arg("--json")
-        .arg("--eval")
-        .args(common_args)
-        .args(["--expr", NIX_EXPR_DUMP_ATTRIBUTES])
-    ;
-
-    log_command(&cmd);
-
-    let result =
-        cmd
-        // Stream stderr to the console
-        .stderr(Stdio::inherit())
-        // Capture the output
-        .output()?
-    ;
-
-    // If the command failed *in a controlled manner*, 
-    if !result.status.success() {
-        std::process::exit(result.status.code().unwrap());
-    }
-
-    // Parse result
-    serde_json::from_str(&String::from_utf8_lossy(&result.stdout))
-        .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
-}
 
 /// Returns the serde_json Array of serde_json Objects for the evaluated list of Nix attribute sets.
 fn evaluate_chunk(common_args: &Vec<String>, path: &str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
@@ -92,9 +51,6 @@ fn evaluate_chunk(common_args: &Vec<String>, path: &str) -> Result<serde_json::V
     serde_json::from_str(&String::from_utf8_lossy(&result.stdout))
         .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
 }
-
-type AttributePath = Vec<String>;
-type AttributePaths = Vec<AttributePath>;
 
 type EvaluationData = Vec<serde_json::Value>;
 
