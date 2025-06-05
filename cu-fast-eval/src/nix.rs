@@ -1,4 +1,6 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::process::Command;
 use std::process::Stdio;
 
@@ -8,6 +10,7 @@ pub type AttributePath = Vec<String>;
 pub type AttributePaths = Vec<AttributePath>;
 pub type NixCliExpressionArguments = HashMap<String, String>;
 
+#[derive(Serialize, Deserialize, Clone)]
 pub enum NixCliExpression {
     Expression(Option<String>),
     Path(Option<String>),
@@ -22,6 +25,25 @@ pub const COMMAND_NIX_INSTANTIATE: &str = match option_env!("COMMAND_NIX_INSTANT
 const NIX_EXPR_CLI_IMPORT: &str = include_str!("nix/cli-import.nix");
 const NIX_EXPR_DUMP_ATTRIBUTES: &str = include_str!("nix/dump-attributes.nix");
 const NIX_EXPR_PROCESS_CHUNK: &str = include_str!("nix/process-chunk.nix");
+
+pub fn resolve_path(input_path: Option<String>) -> String {
+    let mut path = PathBuf::from(match input_path {
+        Some(path) => path,
+        None => "./default.nix".to_string(),
+    });
+
+    path = if path.is_absolute() {
+        path
+    } else {
+        std::env::current_dir()
+            .expect("Unable to get current_dir()")
+            .join(path)
+    };
+
+    // We weant an absolute path, equivalent to what Nix does.
+    // The `canonicalize` method would resolve symlinks, which is undesired here.
+    path_clean::clean(path).to_string_lossy().to_string()
+}
 
 /// Returns a nix expression fragment that evaluates an expression with the same semantics as the
 /// standard nix-* CLI tools would.

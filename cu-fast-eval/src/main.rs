@@ -3,6 +3,7 @@ use std::cmp;
 use std::fs;
 
 use cu_fast_eval::get_env_int;
+use cu_fast_eval::nix;
 use cu_fast_eval::nix::{
     AttributePaths, NixCliExpression, NixCliExpressionArguments,
     build_nix_cli_import_semantics_fragment, evaluate_chunk, get_attributes,
@@ -22,6 +23,7 @@ type EvaluationData = Vec<serde_json::Value>;
 /// Results of an evaluation, according to this too.
 struct EvaluationResults {
     evaluation_arguments: NixCliExpressionArguments,
+    evaluation_input: NixCliExpression,
     attributes_with_errors: AttributePaths,
     data: EvaluationData,
 }
@@ -30,6 +32,7 @@ impl EvaluationResults {
     pub fn new() -> Self {
         Self {
             evaluation_arguments: NixCliExpressionArguments::new(),
+            evaluation_input: NixCliExpression::Expression(None),
             attributes_with_errors: Vec::new(),
             data: EvaluationData::new(),
         }
@@ -170,7 +173,7 @@ fn main() -> Result<(), String> {
     // This represents the "user input".
     // The frament produced here is equivalent to the nix-* CLI semantics.
     common_args.push(
-        build_nix_cli_import_semantics_fragment(expression_input, expression_arguments.clone())
+        build_nix_cli_import_semantics_fragment(expression_input.clone(), expression_arguments.clone())
             .unwrap_or_else(|msg| {
                 eprintln!("error: {}", msg);
                 std::process::exit(1);
@@ -293,7 +296,7 @@ fn main() -> Result<(), String> {
             chunk_results
         })
         .reduce(
-            || EvaluationResults::new(),
+            EvaluationResults::new,
             |mut acc, mut curr| {
                 acc.attributes_with_errors
                     .append(&mut curr.attributes_with_errors);
@@ -310,6 +313,11 @@ fn main() -> Result<(), String> {
     };
 
     result.evaluation_arguments = expression_arguments;
+
+    result.evaluation_input = match expression_input {
+        NixCliExpression::Path(v) => NixCliExpression::Path(Some(nix::resolve_path(v))),
+        v => v,
+    };
 
     serde_json::to_writer_pretty(io, &result).expect("Error while writing results...");
 
