@@ -21,6 +21,7 @@ type EvaluationData = Vec<serde_json::Value>;
 #[derive(Serialize, Deserialize)]
 /// Results of an evaluation, according to this too.
 struct EvaluationResults {
+    evaluation_arguments: NixCliExpressionArguments,
     attributes_with_errors: AttributePaths,
     data: EvaluationData,
 }
@@ -28,6 +29,7 @@ struct EvaluationResults {
 impl EvaluationResults {
     pub fn new() -> Self {
         Self {
+            evaluation_arguments: NixCliExpressionArguments::new(),
             attributes_with_errors: Vec::new(),
             data: EvaluationData::new(),
         }
@@ -106,6 +108,27 @@ fn main() -> Result<(), String> {
     let mut args = Args::parse();
     let mut common_args: Vec<String> = Vec::new();
 
+    let expression_input = if args.is_expression {
+        NixCliExpression::Expression(args.file)
+    } else {
+        NixCliExpression::Path(args.file)
+    };
+
+    let expression_arguments = {
+        let mut ret = NixCliExpressionArguments::new();
+        match args.nix_args {
+            Some(args) => {
+                // Transform `NAME VALUE` pairs into NixCliExpressionArguments values
+                for pair in args.chunks(2) {
+                    let [name, value] = pair else { unreachable!() };
+                    ret.insert(name.to_string(), value.to_string());
+                }
+            }
+            None => { /* no-op */ }
+        }
+        ret
+    };
+
     //
     // Build the CLI invocation for `nix-instantiate`.
     //
@@ -131,36 +154,16 @@ fn main() -> Result<(), String> {
     // This is the attribute set being evaluated.
     common_args.push("--arg".to_string());
     common_args.push("attrs".to_string());
-    common_args.push({
-        let expression_input = if args.is_expression {
-            NixCliExpression::Expression(args.file)
-        } else {
-            NixCliExpression::Path(args.file)
-        };
 
-        let expression_arguments = {
-            let mut ret = NixCliExpressionArguments::new();
-            match args.nix_args {
-                Some(args) => {
-                    // Transform `NAME VALUE` pairs into NixCliExpressionArguments values
-                    for pair in args.chunks(2) {
-                        let [name, value] = pair else { unreachable!() };
-                        ret.insert(name.to_string(), value.to_string());
-                    }
-                }
-                None => { /* no-op */ }
-            }
-            ret
-        };
-
-        // This represents the "user input".
-        // The frament produced here is equivalent to the nix-* CLI semantics.
-        build_nix_cli_import_semantics_fragment(expression_input, expression_arguments)
+    // This represents the "user input".
+    // The frament produced here is equivalent to the nix-* CLI semantics.
+    common_args.push(
+        build_nix_cli_import_semantics_fragment(expression_input, expression_arguments.clone())
             .unwrap_or_else(|msg| {
                 eprintln!("error: {}", msg);
                 std::process::exit(1);
-            })
-    });
+            }),
+    );
 
     // No value? Use PROCESSOR_COUNT if available. This is part of the public API.
     if args.cores.is_none() {
@@ -217,7 +220,7 @@ fn main() -> Result<(), String> {
 
     drop(attributes);
 
-    let result = chunk_paths
+    let mut result = chunk_paths
         .par_iter()
         .map(|chunk_path| {
             let chunk_path = chunk_path.to_str().unwrap();
@@ -272,10 +275,10 @@ fn main() -> Result<(), String> {
                 .collect::<AttributePaths>()
                 .to_vec();
 
-            EvaluationResults {
-                attributes_with_errors,
-                data,
-            }
+            let mut chunk_results = EvaluationResults::new();
+            chunk_results.attributes_with_errors = attributes_with_errors;
+            chunk_results.data = data;
+            chunk_results
         })
         .reduce(
             || EvaluationResults::new(),
@@ -293,6 +296,8 @@ fn main() -> Result<(), String> {
         Some(path) => Box::new(std::fs::File::create(&path).unwrap()),
         None => Box::new(std::io::stdout()),
     };
+
+    result.evaluation_arguments = expression_arguments;
 
     serde_json::to_writer_pretty(io, &result).expect("Error while writing results...");
 
