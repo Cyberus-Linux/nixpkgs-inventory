@@ -93,6 +93,10 @@ struct Args {
     /// Whether to print a stack trace in case of Nix expression evaluation errors.
     #[arg(long)]
     show_trace: bool,
+
+    #[arg(long)]
+    /// Whether to perform evaluation in read/write mode.
+    read_write_mode: bool,
 }
 
 fn main() -> Result<(), String> {
@@ -109,6 +113,9 @@ fn main() -> Result<(), String> {
     // Misc. arguments
     if args.show_trace {
         common_args.push("--show-trace".to_string());
+    }
+    if args.read_write_mode {
+        common_args.push("--read-write-mode".to_string());
     }
 
     // The function used to determine if recursing is needed.
