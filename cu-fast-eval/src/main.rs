@@ -101,12 +101,32 @@ struct Args {
     read_write_mode: bool,
 }
 
+impl Args {
+    /// Parses the standard Nix CLI arguments, to an initial `cli_args` Vec.
+    pub fn to_standard_nix_cli_arguments(&self) -> Vec<String> {
+        let args = Args::parse();
+        let mut cli_args: Vec<String> = Vec::new();
+
+        if args.show_trace {
+            cli_args.push("--show-trace".to_string());
+        }
+        if args.read_write_mode {
+            cli_args.push("--read-write-mode".to_string());
+        }
+
+        cli_args
+    }
+}
+
 fn main() -> Result<(), String> {
     // Path used to serialize the data, so it can be dropped from memory.
     let workdir = tempfile::tempdir().unwrap();
 
+    // Parse CLI
     let mut args = Args::parse();
-    let mut common_args: Vec<String> = Vec::new();
+
+    // Build the shared CLI arguments for `nix-instantiate`.
+    let mut common_args = args.to_standard_nix_cli_arguments();
 
     let expression_input = if args.is_expression {
         NixCliExpression::Expression(args.file)
@@ -132,14 +152,6 @@ fn main() -> Result<(), String> {
     //
     // Build the CLI invocation for `nix-instantiate`.
     //
-
-    // Misc. arguments
-    if args.show_trace {
-        common_args.push("--show-trace".to_string());
-    }
-    if args.read_write_mode {
-        common_args.push("--read-write-mode".to_string());
-    }
 
     // The function used to determine if recursing is needed.
     common_args.push("--arg".to_string());
