@@ -16,7 +16,7 @@ Example use:
 ```
  $ cu-fast-eval \
     --arg config '{ allowAliases = false; }' \
-    '<nixpkgs> \
+    '<nixpkgs>' \
     > evaluation.nixpkgs.json
 ```
 
