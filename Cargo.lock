@@ -150,6 +150,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cu-ingest-to-db"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "cu-fast-eval",
+ "cu-lib-nix",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cu-lib-nix"
 version = "0.1.0"
 dependencies = [
