@@ -140,6 +140,7 @@ name = "cu-fast-eval"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "cu-lib-nix",
  "path-clean",
  "rayon",
  "serde",

@@ -4,8 +4,9 @@ use std::fs;
 
 use cu_fast_eval::get_env_int;
 use cu_fast_eval::nix;
+use cu_lib_nix::nix::{AttributePaths};
+use cu_lib_nix::cli::{NixCliExpression, NixCliExpressionArguments};
 use cu_fast_eval::nix::{
-    AttributePaths, NixCliExpression, NixCliExpressionArguments,
     build_nix_cli_import_semantics_fragment, evaluate_chunk, get_attributes,
 };
 

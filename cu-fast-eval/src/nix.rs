@@ -1,20 +1,10 @@
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::Stdio;
 
 use crate::log_command;
-
-pub type AttributePath = Vec<String>;
-pub type AttributePaths = Vec<AttributePath>;
-pub type NixCliExpressionArguments = HashMap<String, String>;
-
-#[derive(Serialize, Deserialize, Clone)]
-pub enum NixCliExpression {
-    Expression(Option<String>),
-    Path(Option<String>),
-}
+use cu_lib_nix::nix::{AttributePaths};
+use cu_lib_nix::cli::{NixCliExpression, NixCliExpressionArguments};
 
 // Allow hardcoding a specific `nix-instantiate` at build-time, obviating the need for a wrapper.
 pub const COMMAND_NIX_INSTANTIATE: &str = match option_env!("COMMAND_NIX_INSTANTIATE") {
