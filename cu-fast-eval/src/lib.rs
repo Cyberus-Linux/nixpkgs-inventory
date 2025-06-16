@@ -2,6 +2,7 @@ use std::env;
 use std::path::Path;
 use std::process::Command;
 
+pub mod evaluation;
 pub mod nix;
 
 pub fn get_env_int(name: &str) -> Result<Option<usize>, String> {

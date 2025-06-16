@@ -1,4 +1,3 @@
-use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::fs;
 
@@ -6,6 +5,7 @@ use cu_fast_eval::get_env_int;
 use cu_fast_eval::nix;
 use cu_lib_nix::nix::{AttributePaths};
 use cu_lib_nix::cli::{NixCliExpression, NixCliExpressionArguments};
+use cu_fast_eval::evaluation;
 use cu_fast_eval::nix::{
     build_nix_cli_import_semantics_fragment, evaluate_chunk, get_attributes,
 };
@@ -17,28 +17,6 @@ use rayon::prelude::*;
 // It's also sufficiently big that on a single-system Nixpkgs eval, it's bigger
 // than `attributes.len() / 16`.
 const DEFAULT_MAX_ALLOWABLE_PER_CHUNK: usize = 16_000;
-
-type EvaluationData = Vec<serde_json::Value>;
-
-#[derive(Serialize, Deserialize)]
-/// Results of an evaluation, according to this too.
-struct EvaluationResults {
-    evaluation_arguments: NixCliExpressionArguments,
-    evaluation_input: NixCliExpression,
-    attributes_with_errors: AttributePaths,
-    data: EvaluationData,
-}
-
-impl EvaluationResults {
-    pub fn new() -> Self {
-        Self {
-            evaluation_arguments: NixCliExpressionArguments::new(),
-            evaluation_input: NixCliExpression::Expression(None),
-            attributes_with_errors: Vec::new(),
-            data: EvaluationData::new(),
-        }
-    }
-}
 
 #[derive(Parser, Debug)]
 #[command(version)]
@@ -260,7 +238,7 @@ fn main() -> Result<(), String> {
             // In that case, this could take longer than evaluating the attribute set in a serial
             // manner. Though this shouldn't happen.
             //
-            let data: EvaluationData = evaluate_chunk(&common_args, chunk_path)
+            let data = evaluate_chunk(&common_args, chunk_path)
                 .unwrap_or_else(|_| panic!("Unexpected error while handling chunk {}", chunk_path))
                 .as_array()
                 .unwrap_or_else(|| panic!("Unexpected error while handling chunk {}", chunk_path))
@@ -291,13 +269,13 @@ fn main() -> Result<(), String> {
                 .collect::<AttributePaths>()
                 .to_vec();
 
-            let mut chunk_results = EvaluationResults::new();
+            let mut chunk_results = evaluation::Results::new();
             chunk_results.attributes_with_errors = attributes_with_errors;
             chunk_results.data = data;
             chunk_results
         })
         .reduce(
-            EvaluationResults::new,
+            evaluation::Results::new,
             |mut acc, mut curr| {
                 acc.attributes_with_errors
                     .append(&mut curr.attributes_with_errors);
@@ -313,11 +291,11 @@ fn main() -> Result<(), String> {
         None => Box::new(std::io::stdout()),
     };
 
-    result.evaluation_arguments = expression_arguments;
+    result.evaluation_arguments = Some(expression_arguments);
 
     result.evaluation_input = match expression_input {
-        NixCliExpression::Path(v) => NixCliExpression::Path(Some(nix::resolve_path(v))),
-        v => v,
+        NixCliExpression::Path(v) => Some(NixCliExpression::Path(Some(nix::resolve_path(v)))),
+        v => Some(v),
     };
 
     serde_json::to_writer_pretty(io, &result).expect("Error while writing results...");
