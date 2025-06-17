@@ -18,6 +18,12 @@ let
   ;
 in
 mkShell {
+  buildInputs = [
+  ]
+    # Pick all subprojects buildInputs.
+    ++ (getSubprojectAttr [] "buildInputs")
+  ;
+
   nativeBuildInputs = [
     cargo
     rustc
@@ -26,5 +32,7 @@ mkShell {
   ]
     # Pick all `dev-runner` attributes on this project's packages.
     ++ (getSubprojectAttr null "dev-runner")
+    # Pick all subprojects nativeBuildInputs.
+    ++ (getSubprojectAttr [] "nativeBuildInputs")
   ;
 }
