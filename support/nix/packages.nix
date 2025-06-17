@@ -45,5 +45,8 @@
 
     # Ref on the Nix used for this package set.
     inherit nix;
+
+    # Ref on the package set.
+    inherit pkgs;
   }
 )).self
