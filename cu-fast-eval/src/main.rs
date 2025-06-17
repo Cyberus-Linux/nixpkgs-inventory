@@ -1,14 +1,12 @@
 use std::cmp;
 use std::fs;
 
+use cu_fast_eval::evaluation;
 use cu_fast_eval::get_env_int;
 use cu_fast_eval::nix;
-use cu_lib_nix::nix::{AttributePaths};
+use cu_fast_eval::nix::{build_nix_cli_import_semantics_fragment, evaluate_chunk, get_attributes};
 use cu_lib_nix::cli::{NixCliExpression, NixCliExpressionArguments};
-use cu_fast_eval::evaluation;
-use cu_fast_eval::nix::{
-    build_nix_cli_import_semantics_fragment, evaluate_chunk, get_attributes,
-};
+use cu_lib_nix::nix::AttributePaths;
 
 use clap::Parser;
 use rayon::prelude::*;
@@ -152,11 +150,14 @@ fn main() -> Result<(), String> {
     // This represents the "user input".
     // The frament produced here is equivalent to the nix-* CLI semantics.
     common_args.push(
-        build_nix_cli_import_semantics_fragment(expression_input.clone(), expression_arguments.clone())
-            .unwrap_or_else(|msg| {
-                eprintln!("error: {}", msg);
-                std::process::exit(1);
-            }),
+        build_nix_cli_import_semantics_fragment(
+            expression_input.clone(),
+            expression_arguments.clone(),
+        )
+        .unwrap_or_else(|msg| {
+            eprintln!("error: {}", msg);
+            std::process::exit(1);
+        }),
     );
 
     // No value? Use PROCESSOR_COUNT if available. This is part of the public API.
@@ -274,15 +275,12 @@ fn main() -> Result<(), String> {
             chunk_results.data = data;
             chunk_results
         })
-        .reduce(
-            evaluation::Results::new,
-            |mut acc, mut curr| {
-                acc.attributes_with_errors
-                    .append(&mut curr.attributes_with_errors);
-                acc.data.append(&mut curr.data);
-                acc
-            },
-        );
+        .reduce(evaluation::Results::new, |mut acc, mut curr| {
+            acc.attributes_with_errors
+                .append(&mut curr.attributes_with_errors);
+            acc.data.append(&mut curr.data);
+            acc
+        });
 
     eprintln!("\n:: Writing output...\n");
 
