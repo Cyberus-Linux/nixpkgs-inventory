@@ -2,6 +2,7 @@
 , pkgs
 , src
 , cargoHash
+, nix ? pkgs.nix
 }:
 
 
@@ -41,5 +42,8 @@
       "self"
     ];
     dev-shell = callPackage ./dev-shell.nix { inherit subprojects; };
+
+    # Ref on the Nix used for this package set.
+    inherit nix;
   }
 )).self
