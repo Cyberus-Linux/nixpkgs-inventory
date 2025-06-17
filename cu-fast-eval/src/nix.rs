@@ -3,8 +3,8 @@ use std::process::Command;
 use std::process::Stdio;
 
 use crate::log_command;
-use cu_lib_nix::nix::{AttributePaths};
 use cu_lib_nix::cli::{NixCliExpression, NixCliExpressionArguments};
+use cu_lib_nix::nix::AttributePaths;
 
 // Allow hardcoding a specific `nix-instantiate` at build-time, obviating the need for a wrapper.
 pub const COMMAND_NIX_INSTANTIATE: &str = match option_env!("COMMAND_NIX_INSTANTIATE") {
