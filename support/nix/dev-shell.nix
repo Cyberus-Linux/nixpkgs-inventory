@@ -7,6 +7,16 @@
 
 , subprojects
 }:
+
+let
+  getSubprojectAttr =
+    default: attr:
+    lib.mapAttrsToList (
+      name: drv:
+      drv.${attr} or default
+    ) subprojects
+  ;
+in
 mkShell {
   nativeBuildInputs = [
     cargo
@@ -14,12 +24,7 @@ mkShell {
     clippy
     rustfmt
   ]
-  ++ (
     # Pick all `dev-runner` attributes on this project's packages.
-    lib.mapAttrsToList (
-      name: drv:
-      drv.dev-runner or null
-    ) subprojects
-  )
+    ++ (getSubprojectAttr null "dev-runner")
   ;
 }
