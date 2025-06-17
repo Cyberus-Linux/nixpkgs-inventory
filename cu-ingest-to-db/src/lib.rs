@@ -1,3 +1,5 @@
+pub mod database;
+
 /// Types describing the results of evaluating a Nixpkgs-like attrset.
 pub mod derivation {
     use cu_lib_nix::nix;
@@ -53,6 +55,18 @@ pub mod derivation {
         pub outputs: HashMap<String, String>,
         pub pname: Option<String>,
         pub version: Option<String>,
+    }
+
+    impl Info {
+        /// Formats the attribute path as the joined "deep" access form for usage in Nix.
+        /// i.e. `["a" "b" "c"]` → `"a"."b"."c"`
+        pub fn attribute_to_nix(&self) -> String {
+            self.attr_path
+                .iter()
+                .map(|component| serde_json::to_string(component).unwrap())
+                .collect::<Vec<String>>()
+                .join(".")
+        }
     }
 }
 
