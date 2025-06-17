@@ -25,7 +25,7 @@
       workspace.members
       (
         name: 
-        callPackage ./generic-subproject.nix (sharedInputs // {
+        callPackage ./import-subproject.nix (sharedInputs // {
           inherit name;
         })
       )
