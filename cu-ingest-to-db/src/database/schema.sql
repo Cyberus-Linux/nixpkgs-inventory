@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS derivation_input_paths (
   derivation_path store_path NOT NULL
 , store_path str NOT NULL
 , type str NOT NULL
-, PRIMARY KEY (store_path, type)
+, PRIMARY KEY (derivation_path, store_path, type)
 , FOREIGN KEY (derivation_path) REFERENCES derivations(path)
 );
 CREATE INDEX IF NOT EXISTS index_derivation_input_paths_derivation_path
