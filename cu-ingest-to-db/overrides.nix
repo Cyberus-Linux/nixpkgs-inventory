@@ -1,5 +1,6 @@
 { pkg-config
 , sqlite
+, nix
 }:
 
 # Generic subproject attributes
@@ -9,6 +10,7 @@
 }:
 
 {
+  COMMAND_NIX_STORE = "${nix}/bin/nix-store";
   buildInputs = buildInputs ++ [
     sqlite
   ];
