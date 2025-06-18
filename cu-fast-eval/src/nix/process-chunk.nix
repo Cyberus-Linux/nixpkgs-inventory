@@ -7,8 +7,36 @@ let
   # Check if given value is a derivation.
   isDerivation = value: (value.type or null) == "derivation";
 
+  hasOutPath =
+    value:
+    builtins.isAttrs value && value ? outPath
+  ;
+
   # Parse JSON from file.
   readJSON = path: builtins.fromJSON ( builtins.readFile path );
+
+  # Given a list, concatenates and flattens the lists or attrsets, recursively
+  getPathsAndStringsDeep =
+    list:
+    builtins.foldl'
+    (acc: curr:
+      acc ++ (
+        if builtins.isList curr then
+          # Pass through lists
+          getPathsAndStringsDeep curr
+        else if builtins.isString curr || builtins.isPath curr || isDerivation curr || hasOutPath curr then
+          # Strings and paths are wrapped in a list.
+          [ "${curr}" ]
+        else if builtins.isAttrs curr then
+          # Pick values out of attrsets.
+          getPathsAndStringsDeep (builtins.attrValues curr)
+        else
+         [ /* ignore other values */ ]
+      )
+    )
+    []
+    list
+  ;
 
   # Get an attribute from nested attribute sets, by path.
   # path: list of attribute names to get a value from nested attribute sets
@@ -72,6 +100,26 @@ let
                 ;
                 pname = deriv.pname or null;
                 version = deriv.version or null;
+
+                # Direct inputs
+                #
+                # NOTE: other inputs are handled using `nix-store --query --references`.
+                #
+                # Both `src` and `srcs` in Nixpkgs can be any of:
+                #  - Not set
+                #  - a string
+                #  - a list
+                #    - of strings
+                #    - of lists [...]
+                # This is why we're combining `src` and `srcs` as `srcs`.
+                srcs =
+                  []
+                  ++ (getPathsAndStringsDeep [ (deriv.src or null) ])
+                  ++ (getPathsAndStringsDeep [ (deriv.srcs or null) ])
+                ;
+                patches = getPathsAndStringsDeep [ (deriv.patches or null) ];
+
+                # Outputs
                 outputs =
                     builtins.listToAttrs (
                       map
