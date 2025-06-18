@@ -14,6 +14,9 @@
   pkgs ? null
 # Path used to import Nixpkgs from.
 , nixpkgs_path ? null
+# Some checks we can run take a long time to run.
+# Let's not use them by default.
+, with-expensive-tests ? false
 }:
 
 # This `let ... in` block cannot rely on Nixpkgs lib.
@@ -53,9 +56,45 @@ let
           ;
         }
       );
+      expensive =
+        test:
+        if with-expensive-tests
+        then test
+        else null
+      ;
     in
     recurseIntoAttrs {
       inherit packages;
+
+      integration = recurseIntoAttrs {
+        evaluate-nixpkgs = expensive (
+          packages.callPackage (
+            { runCommand
+            , cu-fast-eval
+            }:
+
+            runCommand "nixpkgs.fast-eval.json" {
+              pkgs = pkgs.path;
+              nativeBuildInputs = [
+                cu-fast-eval
+              ];
+            } ''
+              printf ' ⇒ Running fast-eval against this Nixpkgs...\n  pkgs.path:%s\n' "$pkgs"
+              export NIX_REMOTE="local?root=$PWD/tmpdir" 
+              cmd=(
+                cu-fast-eval
+                --read-write-mode
+                --arg config '{ allowAliases = false; }'
+                --arg identifier '"fast-eval-self-check"'
+                --arg 'currentSystem' 'builtins.currentSystem'
+                "$pkgs"
+              )
+              mkdir -p $out
+              "''${cmd[@]}" > $out/nixpkgs.fast-eval.json
+            ''
+          ) {}
+        );
+      };
     }
   ;
 in
