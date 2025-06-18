@@ -48,3 +48,47 @@ This allows using `cu-fast-eval [...]` instead of using `cargo run --bin cu-fast
 while still building as expected.
 
 > **NOTE**: The aliases are provided as scripts via PATH, so that they work as expected outside of Bash.
+
+
+### Integration tests
+
+> [!TIP]
+> The following commands only evaluates and makes the derivations using `nix-instantiate`.
+> To actually build the checks, use `nix-build` instead.
+
+The `support/nix/checks.nix` expression can be used to build the tooling against the Nix implementations packaged in Nixpkgs.
+
+The default invocation will use the Nixpkgs pinned in the repository.
+
+```
+ $ nix-instantiate support/nix/checks.nix
+...
+/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-cu-lib-nix-0.0.0.drv
+/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-nix-shell.drv
+/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-nix-2.28.3.drv
+```
+
+The checks can be ran on an arbitrary Nixpkgs using the expression's arguments.
+
+The following example uses `NIX_PATH` and *angled brackets path syntax* to import the current *NixOS release channel* for the *unstable* branch of upstream Nixpkgs.
+
+```
+ $ nix-instantiate \
+    -I nixpkgs=channel:nixos-unstable \
+    --arg nixpkgs_path '<nixpkgs>' \
+    support/nix/checks.nix
+...
+/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-cu-lib-nix-0.0.0.drv
+/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-nix-shell.drv
+/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-nix-2.24.14.drv
+```
+
+Running the checks against a Nixpkgs different from the one pinned in the repository may not work as expected.
+It may not be a bug if it's against an older Nixpkgs version.
+It may highlight an upcoming issue if it's against a newer Nixpkgs version.
+
+As a convenience, the `support/nix/impure-checks.nix` expression can be used to handily build against a few best-effort release channels.
+
+```
+ $ nix-build --keep-going --no-out-link support/nix/impure-checks.nix
+```
