@@ -1,3 +1,5 @@
+{ with-expensive-tests ? false
+}:
 #
 # This expression is ***impure*** and will check against the current stage of the different release channels.
 #
@@ -13,7 +15,12 @@ let
     in
     {
       "${escapedAttrName identifier}" = recurseIntoAttrs (
-        import ./checks.nix { inherit pkgs; }
+        import ./checks.nix {
+          inherit
+            with-expensive-tests
+            pkgs
+          ;
+        }
       );
     }
   ;
