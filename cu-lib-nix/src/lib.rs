@@ -9,10 +9,10 @@ pub mod nix {
 /// CLI-specific types for cake-unbaker
 pub mod cli {
     use serde::{Deserialize, Serialize};
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     /// Arguments for a Nix expression, for the CLI.
-    pub type NixCliExpressionArguments = HashMap<String, String>;
+    pub type NixCliExpressionArguments = BTreeMap<String, String>;
 
     /// CLI argument representing the expression to evaluate.
     /// Following the CLI semantics, it can be either:
