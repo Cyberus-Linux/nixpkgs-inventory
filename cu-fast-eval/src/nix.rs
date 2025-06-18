@@ -94,7 +94,7 @@ pub fn build_nix_cli_import_semantics_fragment(
 pub fn get_attributes(
     common_args: &Vec<String>,
 ) -> Result<AttributePaths, Box<dyn std::error::Error>> {
-    eprintln!("\n:: Evaluating attribtues\n");
+    eprintln!("\n:: Evaluating attributes\n");
 
     let mut cmd = Command::new(COMMAND_NIX_INSTANTIATE);
     cmd.arg("--strict")
