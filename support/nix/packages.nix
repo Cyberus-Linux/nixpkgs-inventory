@@ -1,6 +1,6 @@
 { lib
 , pkgs
-, src ? ../..
+, src ? builtins.fetchGit ../..
 , nix ? pkgs.nix
 }:
 
