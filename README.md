@@ -49,6 +49,29 @@ while still building as expected.
 
 > **NOTE**: The aliases are provided as scripts via PATH, so that they work as expected outside of Bash.
 
+#### Working with a different Nix
+
+By default, the shell will not provide a Nix package.
+The tooling will use the ambient Nix from your host system.
+
+It may be necessary to quickly work on the project using a specific Nix version.
+This can be achieved by passing the desired *attribute name* for the Nix package as the `nix` argument to the `shell.nix` expression.
+
+> [!NOTE]
+> The following examples use `--pure` *only* to properly show the Nix package comes from the shell.
+> Do not use `--pure` with the `nix-shell` you intend to work in, it will break some things.
+
+```
+ $ nix-shell --pure --run 'nix-instantiate --version' | head -n1
+/tmp/nix-shell-2722726-0/rc: line 3: nix-instantiate: command not found
+
+ $ nix-shell --pure --argstr nix nix --run 'nix-instantiate --version' | head -n1
+nix-instantiate (Nix) 2.28.3
+
+ $ nix-shell --pure --argstr nix lix --run 'nix-instantiate --version' | head -n1
+nix-instantiate (Lix, like Nix) 2.91.1
+```
+
 
 #### Working with a different Nixpkgs
 
