@@ -156,6 +156,7 @@ dependencies = [
  "clap",
  "cu-fast-eval",
  "cu-lib-nix",
+ "rayon",
  "rusqlite",
  "serde",
  "serde_json",

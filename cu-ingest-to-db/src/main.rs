@@ -1,3 +1,4 @@
+use std::sync::{Arc, Mutex};
 use std::fs;
 
 use cu_fast_eval::evaluation;
@@ -6,6 +7,7 @@ use cu_ingest_to_db::derivation;
 use cu_lib_nix::nix::derivation_references;
 
 use clap::Parser;
+use rayon::prelude::*;
 
 #[derive(Parser, Debug)]
 #[command(version)]
@@ -153,9 +155,14 @@ fn main() {
 
     eprintln!("\n\n:: Querying derivations references...\n");
 
-    for drv_path in new_drvs {
+    let conn_mutex = Arc::new(Mutex::new(conn));
+
+    new_drvs.into_par_iter().for_each(|drv_path| {
         eprintln!(" ⇒ {}", drv_path);
         let references = derivation_references(&drv_path).unwrap();
+
+        // Get a lock on the actual db connection once the long-running command is done.
+        let conn = conn_mutex.lock().unwrap();
 
         for store_path in references {
             let input_is_drv = store_path.ends_with(".drv");
@@ -193,5 +200,5 @@ fn main() {
                 .expect("Unable to execute insert for derivation input (path)");
             }
         }
-    }
+    })
 }
