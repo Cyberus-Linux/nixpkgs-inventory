@@ -6,6 +6,7 @@
 , rustfmt
 
 , subprojects
+, nix
 }:
 
 let
@@ -25,6 +26,7 @@ mkShell {
   ;
 
   nativeBuildInputs = [
+    nix
     cargo
     rustc
     clippy
