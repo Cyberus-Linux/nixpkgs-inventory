@@ -4,7 +4,7 @@ pub mod database;
 pub mod derivation {
     use cu_lib_nix::nix;
     use serde::{Deserialize, Serialize};
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     #[derive(Serialize, Deserialize, Debug)]
     #[serde(untagged)]
@@ -52,7 +52,7 @@ pub mod derivation {
         pub drv_path: String,
         pub meta: Option<Meta>,
         pub name: String,
-        pub outputs: HashMap<String, String>,
+        pub outputs: BTreeMap<String, String>,
         pub pname: Option<String>,
         pub version: Option<String>,
     }
