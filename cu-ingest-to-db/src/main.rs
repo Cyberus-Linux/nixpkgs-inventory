@@ -101,6 +101,25 @@ fn main() {
                     )
                     .expect("Unable to execute insert for derivation_output_paths");
                 }
+
+                // Save inputs for a given drv.
+                for (input_type, list) in [("src", &result.srcs), ("patch", &result.patches)] {
+                    for store_path in list {
+                        eprintln!("   {}: {}", input_type, store_path);
+                        conn.insert(
+                            database::InsertQuery {
+                                directive: database::InsertDirective::Insert,
+                                table: database::Table::DerivationInputPaths,
+                            },
+                            database::named_params! {
+                                ":derivation_path": &result.drv_path,
+                                ":store_path": &store_path,
+                                ":type": &input_type,
+                            },
+                        )
+                        .expect("Unable to execute insert for derivation input");
+                    }
+                }
             }
         }
     }
