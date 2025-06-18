@@ -3,6 +3,7 @@ use std::fs;
 use cu_fast_eval::evaluation;
 use cu_ingest_to_db::database;
 use cu_ingest_to_db::derivation;
+use cu_lib_nix::nix::derivation_references;
 
 use clap::Parser;
 
@@ -18,6 +19,8 @@ fn main() {
 
     let conn =
         database::open(&args.database).expect("Unexpected error while opening the database.");
+
+    let mut new_drvs: Vec<String> = Vec::new();
 
     for path in args.json_paths {
         // NOTE: `serde_json::from_reader(fs::File::open(...))` is a lot slower than expected...
@@ -120,6 +123,74 @@ fn main() {
                         .expect("Unable to execute insert for derivation input");
                     }
                 }
+            }
+
+            // When "derivation inputs" for a derivation exists for a given derivation, skip it.
+            // A derivation without any input will checked every time this runs, but these are
+            // outliers, and we're more than likely building a fresh database.
+            let has_inputs = conn
+                .query_one(
+                    &format!(
+                        "SELECT COUNT(*) FROM {} WHERE derivation_path = :path",
+                        database::Table::DerivationInputDerivations.get_name()
+                    ),
+                    database::named_params! {
+                        ":path": &result.drv_path,
+                    },
+                    |row| row.get::<usize, usize>(0),
+                )
+                .unwrap()
+                > 0;
+
+            // Also make sure we don't re-add something to the list.
+            // (Multiple attribute paths can refer to the same derivation)
+            if !has_inputs && !new_drvs.contains(&result.drv_path) {
+                // Queue new drvs to be checked.
+                new_drvs.push(result.drv_path.clone());
+            }
+        }
+    }
+
+    eprintln!("\n\n:: Querying derivations references...\n");
+
+    for drv_path in new_drvs {
+        eprintln!(" ⇒ {}", drv_path);
+        let references = derivation_references(&drv_path).unwrap();
+
+        for store_path in references {
+            let input_is_drv = store_path.ends_with(".drv");
+            let reference_type = if input_is_drv { "derivation" } else { "path" };
+            eprintln!("        {}: {}", reference_type, store_path);
+
+            if input_is_drv {
+                conn.insert(
+                    database::InsertQuery {
+                        directive: database::InsertDirective::Insert,
+                        table: database::Table::DerivationInputDerivations,
+                    },
+                    database::named_params! {
+                        ":derivation_path": &drv_path,
+                        ":input_derivation": &store_path,
+                        // We don't know the output (store path) referred to with `--references`.
+                        // This is sufficient.
+                        // If needed, parsing the `.drv` file gives us the info.
+                        ":output": "(reference)",
+                    },
+                )
+                .expect("Unable to execute insert for derivation input (derivation)");
+            } else {
+                conn.insert(
+                    database::InsertQuery {
+                        directive: database::InsertDirective::Insert,
+                        table: database::Table::DerivationInputPaths,
+                    },
+                    database::named_params! {
+                        ":derivation_path": &drv_path,
+                        ":store_path": &store_path,
+                        ":type": "reference",
+                    },
+                )
+                .expect("Unable to execute insert for derivation input (path)");
             }
         }
     }
