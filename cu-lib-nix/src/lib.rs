@@ -3,10 +3,48 @@ use std::process::Command;
 
 /// Shared Nix-related types used in cake-unbaker
 pub mod nix {
+    use crate::log_command;
+    use std::process::Command;
+    use std::process::Stdio;
+
+    // Allow hardcoding a specific `nix-store` at build-time, obviating the need for a wrapper.
+    pub const COMMAND_NIX_STORE: &str = match option_env!("COMMAND_NIX_STORE") {
+        Some(v) => v,
+        None => "nix-store",
+    };
+
     /// An attribute path is a list representing the path to a value in (possibly nested) attribute sets.
     pub type AttributePath = Vec<String>;
     /// A list of attribute paths.
     pub type AttributePaths = Vec<AttributePath>;
+
+    pub fn derivation_references(drv: &String) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        let mut cmd = Command::new(COMMAND_NIX_STORE);
+        cmd.arg("--query").arg("--references").arg(drv);
+
+        log_command(&cmd);
+
+        let result = cmd
+            // Stream stderr to the console
+            .stderr(Stdio::inherit())
+            // Capture the output
+            .output()?;
+
+        // Ignore error statuses; the derivation may not exist, and it's fine.
+        if !result.status.success() {
+            return Ok(vec![]);
+        }
+
+        //// Parse result
+        //serde_json::from_str(&String::from_utf8_lossy(&result.stdout))
+        //    .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
+
+        Ok(String::from_utf8_lossy(&result.stdout)
+            .trim()
+            .split("\n")
+            .map(String::from)
+            .collect())
+    }
 }
 
 /// CLI-specific types for cake-unbaker
