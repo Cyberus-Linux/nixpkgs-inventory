@@ -1,6 +1,37 @@
+#
+# The arguments need to be provided at the base of the expression, or else
+# the Nix CLI will not pass arguments as expected.
+#
+# Keep those input argument names in sync with `default.nix`.
+#
+# We're using the `null` value as a flag to imply the value should not be
+# passed down to the imported `default.nix` expression.
+#
+# The default values are defined in `default.nix` at the root of the project.
+#
+{
+# A Nixpkgs to build from.
+  pkgs ? null
+# Path used to import Nixpkgs from.
+, nixpkgs_path ? null
+}:
+
+# This `let ... in` block cannot rely on Nixpkgs lib.
+let
+  optionalAttrs =
+    condition: attrs:
+    if condition then attrs else {}
+  ;
+  args =
+    {}
+    // (optionalAttrs (pkgs != null) { inherit pkgs; })
+    // (optionalAttrs (nixpkgs_path != null) { inherit nixpkgs_path; })
+  ;
+in
+
 let
   # Import the default set.
-  self = import ../.. {};
+  self = import ../.. args;
   inherit (self)
     pkgs
   ;
