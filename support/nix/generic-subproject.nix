@@ -11,12 +11,12 @@ let
   # We're using the source input for all the actual information.
   CargoTOML = builtins.fromTOML (builtins.readFile (subproject + "/Cargo.toml"));
 in
-rustPlatform.buildRustPackage (finalAttrs: {
+rustPlatform.buildRustPackage (rec {
   pname = CargoTOML.package.name;
   version = CargoTOML.package.version;
 
   # Workspace subproject
-  buildAndTestSubdir = finalAttrs.pname;
+  buildAndTestSubdir = pname;
 
   inherit src;
 
