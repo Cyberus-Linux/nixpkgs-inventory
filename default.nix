@@ -16,5 +16,9 @@ import ./support/nix/packages.nix {
     pkgs
     src
   ;
-  nix = pkgs."${nix}";
+  nix =
+    if nix == null
+    then null
+    else pkgs."${nix}"
+  ;
 }
