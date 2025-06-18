@@ -55,6 +55,8 @@ pub mod derivation {
         pub outputs: BTreeMap<String, String>,
         pub pname: Option<String>,
         pub version: Option<String>,
+        pub srcs: Vec<String>,
+        pub patches: Vec<String>,
     }
 
     impl Info {
@@ -207,7 +209,11 @@ mod tests {
               "outputs": {
                 "out": "/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-hello-2.12.1"
               },
+              "patches": [],
               "pname": "hello",
+              "srcs": [
+                "/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-hello-2.12.1.tar.gz"
+              ],
               "version": "2.12.1"
             }
         "#;
