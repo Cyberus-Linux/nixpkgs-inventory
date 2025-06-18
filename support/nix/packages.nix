@@ -1,7 +1,6 @@
 { lib
 , pkgs
 , src
-, cargoHash
 , nix ? pkgs.nix
 }:
 
@@ -17,7 +16,7 @@
     ;
 
     sharedInputs = {
-      inherit src cargoHash;
+      inherit src;
     };
 
     subprojects =

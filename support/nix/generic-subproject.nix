@@ -4,7 +4,6 @@
 
 , name
 , src
-, cargoHash
 }:
 
 let
@@ -20,7 +19,10 @@ rustPlatform.buildRustPackage (finalAttrs: {
   buildAndTestSubdir = finalAttrs.pname;
 
   inherit src;
-  inherit cargoHash;
+
+  cargoLock = {
+    lockFile = ../../Cargo.lock;
+  };
 
   passthru = {
     # Provide a default development shell helper to "just" run the command.

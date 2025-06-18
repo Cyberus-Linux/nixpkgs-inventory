@@ -19,7 +19,6 @@ let
         pkgs
       ;
       inherit (self.cu-fast-eval)
-        cargoHash
         src
       ;
     })

@@ -5,7 +5,6 @@
 
 , name
 , src
-, cargoHash
 }:
 
 let
@@ -15,7 +14,7 @@ let
   # Or completely self-describe.
   defaultPath = subproject + "/default.nix";
 
-  args = { inherit name src cargoHash; };
+  args = { inherit name src; };
 in
 
 if builtins.pathExists defaultPath

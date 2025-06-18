@@ -7,8 +7,6 @@
 , nix ? "nix"
 # The workspace source, for internal use mainly.
 , src ? ./.
-# The cargo input hash for this workspace, for internal use mainly.
-, cargoHash ? "sha256-KCbWoYWQ5Dou+Ii1ZCrm7Q7n5XOZS2MigLPP5XszXkQ="
 }:
 
 # This is not using `callPackage` so `override`* isn't exposed to the CLI.
@@ -17,7 +15,6 @@ import ./support/nix/packages.nix {
   inherit
     pkgs
     src
-    cargoHash
   ;
   nix = pkgs."${nix}";
 }
