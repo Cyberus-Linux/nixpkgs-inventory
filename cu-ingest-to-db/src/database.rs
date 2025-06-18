@@ -24,7 +24,7 @@ pub enum Table {
 /// Encapsulates information about said tables
 impl Table {
     /// Returns the table name for the given table.
-    fn get_name(&self) -> &str {
+    pub fn get_name(&self) -> &str {
         match self {
             Table::EvaluationInformations => "evaluation_informations",
             Table::Derivations => "derivations",
@@ -36,7 +36,7 @@ impl Table {
     }
     /// Returns the columns for the given table.
     /// May not include all columns (i.e. created_at)
-    fn get_columns(&self) -> Vec<&str> {
+    pub fn get_columns(&self) -> Vec<&str> {
         match self {
             Table::EvaluationInformations => vec!["id", "expression", "arguments"],
             Table::Derivations => vec!["path"],
