@@ -43,13 +43,20 @@ let
 
   packagesFor =
     nix:
-    recurseIntoAttrs (import ./packages.nix {
-      inherit nix;
-      inherit (pkgs)
-        lib
-        pkgs
-      ;
-    })
+    let
+      packages = recurseIntoAttrs (
+        import ./packages.nix {
+          inherit nix;
+          inherit (pkgs)
+            lib
+            pkgs
+          ;
+        }
+      );
+    in
+    recurseIntoAttrs {
+      inherit packages;
+    }
   ;
 in
 {
