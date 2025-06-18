@@ -50,6 +50,22 @@ while still building as expected.
 > **NOTE**: The aliases are provided as scripts via PATH, so that they work as expected outside of Bash.
 
 
+#### Working with a different Nixpkgs
+
+It may be necessary to quickly work on the project using a different Nixpkgs.
+This can be achieved by passing the `pkgs` or `nixpkgs_path` to the `shell.nix` expression.
+
+The following example uses `NIX_PATH` and *angled brackets path syntax* to import the current *NixOS release channel* for the *unstable* branch of upstream Nixpkgs.
+
+```
+ $ nix-shell -I nixpkgs=channel:nixos-25.05 --arg nixpkgs_path '<nixpkgs>'  --run 'rustc --version'
+rustc 1.86.0 (05f9846f8 2025-03-31) (built from a source tarball)
+
+ $ nix-shell -I nixpkgs=channel:nixos-24.11 --arg nixpkgs_path '<nixpkgs>'  --run 'rustc --version'
+rustc 1.82.0 (f6e511eec 2024-10-15) (built from a source tarball)
+```
+
+
 ### Integration tests
 
 > [!TIP]
