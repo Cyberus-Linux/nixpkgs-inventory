@@ -18,9 +18,6 @@ let
         lib
         pkgs
       ;
-      inherit (self.cu-fast-eval)
-        src
-      ;
     })
   ;
 in

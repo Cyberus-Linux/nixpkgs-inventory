@@ -1,9 +1,8 @@
 { lib
 , pkgs
-, src
+, src ? ../..
 , nix ? pkgs.nix
 }:
-
 
 (lib.makeScope pkgs.newScope (
   self:
