@@ -98,6 +98,15 @@ impl AttributesDatabase {
         Ok(AttributesDatabase { connection })
     }
 
+    pub fn query_one<T, P: rusqlite::Params, F: FnOnce(&rusqlite::Row<'_>) -> Result<T>>(
+        &self,
+        sql: &str,
+        params: P,
+        f: F,
+    ) -> Result<T> {
+        self.connection.query_one(sql, params, f)
+    }
+
     pub fn execute<P: rusqlite::Params>(
         &self,
         sql: &str,
