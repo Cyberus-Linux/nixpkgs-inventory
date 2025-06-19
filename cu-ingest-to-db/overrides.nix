@@ -10,7 +10,6 @@
 }:
 
 {
-  COMMAND_NIX_STORE = "${nix}/bin/nix-store";
   buildInputs = buildInputs ++ [
     sqlite
   ];
