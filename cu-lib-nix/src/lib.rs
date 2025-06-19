@@ -5,8 +5,12 @@ use std::process::Command;
 /// Shared Nix-related types used in cake-unbaker
 pub mod nix {
     use crate::log_command;
+    use serde::{Deserialize, Serialize};
     use std::process::Command;
     use std::process::Stdio;
+
+    /// Used to better convey intent.
+    pub type StorePath = String;
 
     // Allow hardcoding a specific `nix-store` at build-time, obviating the need for a wrapper.
     pub const COMMAND_NIX_STORE: &str = match option_env!("COMMAND_NIX_STORE") {
@@ -19,7 +23,19 @@ pub mod nix {
     /// A list of attribute paths.
     pub type AttributePaths = Vec<AttributePath>;
 
-    pub fn derivation_references(drv: &String) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    #[derive(Serialize, Deserialize, Debug)]
+    pub struct DerivationReferences {
+        pub derivations: Vec<StorePath>,
+        pub paths: Vec<StorePath>,
+    }
+
+    pub fn is_derivation(store_path: &StorePath) -> bool {
+        store_path.ends_with(".drv")
+    }
+
+    pub fn derivation_references(
+        drv: &String,
+    ) -> Result<DerivationReferences, Box<dyn std::error::Error>> {
         let mut cmd = Command::new(COMMAND_NIX_STORE);
         cmd.arg("--query").arg("--references").arg(drv);
 
@@ -33,18 +49,19 @@ pub mod nix {
 
         // Ignore error statuses; the derivation may not exist, and it's fine.
         if !result.status.success() {
-            return Ok(vec![]);
+            return Ok(DerivationReferences {
+                paths: vec![],
+                derivations: vec![],
+            });
         }
 
-        //// Parse result
-        //serde_json::from_str(&String::from_utf8_lossy(&result.stdout))
-        //    .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
-
-        Ok(String::from_utf8_lossy(&result.stdout)
+        let (derivations, paths) = String::from_utf8_lossy(&result.stdout)
             .trim()
             .split("\n")
-            .map(String::from)
-            .collect())
+            .map(StorePath::from)
+            .partition(is_derivation);
+
+        Ok(DerivationReferences { paths, derivations })
     }
 }
 
