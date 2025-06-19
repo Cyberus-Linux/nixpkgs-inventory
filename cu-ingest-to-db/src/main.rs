@@ -65,7 +65,7 @@ fn main() {
                     ":name": &result.name,
                     ":pname": &result.pname,
                     ":version": &result.version,
-                    ":_raw": &serde_json::to_string(&result.attr_path).unwrap(),
+                    ":_raw": &serde_json::to_string(&result).unwrap(),
                 },
             )
             .expect("Unable to execute insert for evaluation_attributes");
