@@ -4,19 +4,27 @@ use std::process::Command;
 
 /// Shared Nix-related types used in cake-unbaker
 pub mod nix {
+    use crate::cli;
     use crate::log_command;
+    use serde::de::DeserializeOwned;
     use serde::{Deserialize, Serialize};
     use std::process::Command;
     use std::process::Stdio;
 
-    /// Used to better convey intent.
-    pub type StorePath = String;
+    // Allow hardcoding a specific `nix-instantiate` at build-time, obviating the need for a wrapper.
+    pub const COMMAND_NIX_INSTANTIATE: &str = match option_env!("COMMAND_NIX_INSTANTIATE") {
+        Some(v) => v,
+        None => "nix-instantiate",
+    };
 
     // Allow hardcoding a specific `nix-store` at build-time, obviating the need for a wrapper.
     pub const COMMAND_NIX_STORE: &str = match option_env!("COMMAND_NIX_STORE") {
         Some(v) => v,
         None => "nix-store",
     };
+
+    /// Used to better convey intent.
+    pub type StorePath = String;
 
     /// An attribute path is a list representing the path to a value in (possibly nested) attribute sets.
     pub type AttributePath = Vec<String>;
@@ -27,6 +35,44 @@ pub mod nix {
     pub struct DerivationReferences {
         pub derivations: Vec<StorePath>,
         pub paths: Vec<StorePath>,
+    }
+
+    /// Returns the (deserialized from JSON) `T` evaluated result of a Nix expression.
+    pub fn evaluate<T: DeserializeOwned>(
+        expression: &String,
+        arguments: cli::NixCliExpressionArguments,
+    ) -> Result<T, String> {
+        let mut cmd = Command::new(COMMAND_NIX_INSTANTIATE);
+
+        for (name, value) in arguments {
+            cmd.args(["--arg", &name, &value]);
+        }
+
+        cmd.arg("--strict")
+            .arg("--json")
+            .arg("--eval")
+            .args(["--expr", expression]);
+
+        log_command(&cmd);
+
+        let result = match cmd.stderr(Stdio::inherit()).output() {
+            Ok(output) => output,
+            Err(err) => {
+                return Err(err.to_string());
+            }
+        };
+
+        // If the command failed.
+        if !result.status.success() {
+            let status = result.status.code().unwrap();
+            return Err(format!("nix-instantiate exited with status ({})", status));
+        }
+
+        // Otherwise, deserialize into the generic type given.
+        match serde_json::from_str::<T>(&String::from_utf8_lossy(&result.stdout)) {
+            Ok(data) => Ok(data),
+            Err(err) => Err(err.to_string()),
+        }
     }
 
     pub fn is_derivation(store_path: &StorePath) -> bool {

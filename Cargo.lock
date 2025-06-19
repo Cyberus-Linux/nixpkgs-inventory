@@ -167,6 +167,7 @@ name = "cu-lib-nix"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "serde_json",
  "shlex",
 ]
 
