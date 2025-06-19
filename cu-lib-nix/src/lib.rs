@@ -1,3 +1,4 @@
+use std::env;
 use std::path::Path;
 use std::process::Command;
 
@@ -73,6 +74,10 @@ pub mod cli {
 // Prints (to stderr) a formatted useful version of the command used.
 // NOTE: Multi-line arguments will be elided to their first line!
 pub fn log_command(cmd: &Command) {
+    let verbose = !env::var("VERBOSE").unwrap_or("".to_string()).is_empty();
+    if !verbose {
+        return;
+    }
     let args: Vec<String> = cmd
         .get_args()
         .map(|s| {
