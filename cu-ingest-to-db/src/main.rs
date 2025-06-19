@@ -164,41 +164,38 @@ fn main() {
         // Get a lock on the actual db connection once the long-running command is done.
         let conn = conn_mutex.lock().unwrap();
 
-        for store_path in references {
-            let input_is_drv = store_path.ends_with(".drv");
-            let reference_type = if input_is_drv { "derivation" } else { "path" };
-            eprintln!("        {}: {}", reference_type, store_path);
-
-            if input_is_drv {
-                conn.insert(
-                    database::InsertQuery {
-                        directive: database::InsertDirective::Insert,
-                        table: database::Table::DerivationInputDerivations,
-                    },
-                    database::named_params! {
-                        ":derivation_path": &drv_path,
-                        ":input_derivation": &store_path,
-                        // We don't know the output (store path) referred to with `--references`.
-                        // This is sufficient.
-                        // If needed, parsing the `.drv` file gives us the info.
-                        ":output": "(reference)",
-                    },
-                )
-                .expect("Unable to execute insert for derivation input (derivation)");
-            } else {
-                conn.insert(
-                    database::InsertQuery {
-                        directive: database::InsertDirective::Insert,
-                        table: database::Table::DerivationInputPaths,
-                    },
-                    database::named_params! {
-                        ":derivation_path": &drv_path,
-                        ":store_path": &store_path,
-                        ":type": "reference",
-                    },
-                )
-                .expect("Unable to execute insert for derivation input (path)");
-            }
+        for store_path in references.derivations {
+            eprintln!("        derivation: {}", store_path);
+            conn.insert(
+                database::InsertQuery {
+                    directive: database::InsertDirective::Insert,
+                    table: database::Table::DerivationInputDerivations,
+                },
+                database::named_params! {
+                    ":derivation_path": &drv_path,
+                    ":input_derivation": &store_path,
+                    // We don't know the output (store path) referred to with `--references`.
+                    // This is sufficient.
+                    // If needed, parsing the `.drv` file gives us the info.
+                    ":output": "(reference)",
+                },
+            )
+            .expect("Unable to execute insert for derivation input (derivation)");
+        }
+        for store_path in references.paths {
+            eprintln!("        path: {}", store_path);
+            conn.insert(
+                database::InsertQuery {
+                    directive: database::InsertDirective::Insert,
+                    table: database::Table::DerivationInputPaths,
+                },
+                database::named_params! {
+                    ":derivation_path": &drv_path,
+                    ":store_path": &store_path,
+                    ":type": "reference",
+                },
+            )
+            .expect("Unable to execute insert for derivation input (path)");
         }
     })
 }
