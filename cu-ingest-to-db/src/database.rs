@@ -1,4 +1,5 @@
 use rusqlite::{Connection, Result};
+use std::sync::{Arc, Mutex};
 
 // Re-exporting, leaky abstraction.
 pub use rusqlite::named_params;
@@ -7,8 +8,9 @@ const DATABASE_SCHEMA: &str = include_str!("database/schema.sql");
 
 /// Represents the connection to the database.
 /// Used for the `impl`.
+#[derive(Clone)]
 pub struct AttributesDatabase {
-    connection: Connection,
+    connection: Arc<Mutex<Connection>>,
 }
 
 /// Encapsulate tables we know about
@@ -95,7 +97,12 @@ impl AttributesDatabase {
         connection.pragma_update(None, "synchronous", "off")?;
         connection.pragma_update(None, "temp_store", "memory")?;
 
-        Ok(AttributesDatabase { connection })
+        // Wrap into the mutex
+        let connection = Mutex::new(connection);
+
+        Ok(AttributesDatabase {
+            connection: connection.into(),
+        })
     }
 
     pub fn query_one<T, P: rusqlite::Params, F: FnOnce(&rusqlite::Row<'_>) -> Result<T>>(
@@ -104,7 +111,7 @@ impl AttributesDatabase {
         params: P,
         f: F,
     ) -> Result<T> {
-        self.connection.query_one(sql, params, f)
+        self.connection.lock().unwrap().query_one(sql, params, f)
     }
 
     pub fn execute<P: rusqlite::Params>(
@@ -112,7 +119,7 @@ impl AttributesDatabase {
         sql: &str,
         params: P,
     ) -> Result<usize, rusqlite::Error> {
-        self.connection.execute(sql, params)
+        self.connection.lock().unwrap().execute(sql, params)
     }
 
     /// Handles the boring part of simple INSERT queries.
