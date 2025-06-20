@@ -131,3 +131,15 @@ As a convenience, the `support/nix/impure-checks.nix` expression can be used to 
 ```
  $ nix-build --keep-going --no-out-link support/nix/impure-checks.nix
 ```
+
+
+### Debugging tips
+
+#### `VERBOSE` flag
+
+By setting the `VERBOSE` environment to any value (other than an empty value), some parts of the commands may print useful information.
+
+Information will include:
+
+ - Pretty-printed command for calls to Nix CLI utilities.
+   - NOTE: Multi-line arguments will be elided to their first line!
