@@ -41,6 +41,7 @@ pub mod nix {
     pub fn evaluate<T: DeserializeOwned>(
         expression: &String,
         arguments: cli::NixCliExpressionArguments,
+        options: cli::NixInstantiateOptions,
     ) -> Result<T, String> {
         let mut cmd = Command::new(COMMAND_NIX_INSTANTIATE);
 
@@ -48,10 +49,20 @@ pub mod nix {
             cmd.args(["--arg", &name, &value]);
         }
 
-        cmd.arg("--strict")
-            .arg("--json")
-            .arg("--eval")
-            .args(["--expr", expression]);
+        // NOTE: we are overriding the provided options, for the arguments we need strictly need.
+        let options = options.merge(cli::NixInstantiateOptions {
+            // Value needs to be evaluated fully
+            strict: Some(true),
+            // Serialization format
+            json: Some(true),
+            // This is an evaluation, not an instantiation
+            eval: Some(true),
+            // We're passing an expression
+            expression: Some(true),
+            ..Default::default()
+        });
+
+        cmd.args(options.to_cli_arguments()).arg(expression);
 
         log_command(&cmd);
 
@@ -131,6 +142,71 @@ pub mod cli {
     pub enum NixCliExpression {
         Expression(Option<String>),
         Path(Option<String>),
+    }
+
+    /// CLI options for `nix-instantiate`, as a type.
+    ///
+    /// It is recommended to only set values you care about, and rely on `..Default::default()` for
+    /// leftover default values.
+    ///
+    /// See `merge` for composing different NixInstantiateOptions.
+    ///
+    /// The Default values are intended to merge properly and not overwrite unset (`None`) values.
+    #[derive(Debug, Default)]
+    pub struct NixInstantiateOptions {
+        /// `--expr` or `-E`
+        pub expression: Option<bool>,
+        /// `--strict`
+        pub strict: Option<bool>,
+        /// `--json`
+        pub json: Option<bool>,
+        /// `--eval`
+        pub eval: Option<bool>,
+        /// `--read-write-mode`
+        pub read_write_mode: Option<bool>,
+        /// `--readonly-mode`
+        pub readonly_mode: Option<bool>,
+    }
+
+    impl NixInstantiateOptions {
+        /// Merge `other`'s values into `self`.
+        pub fn merge(self, other: Self) -> Self {
+            Self {
+                expression: other.expression.or(self.expression),
+                strict: other.strict.or(self.strict),
+                json: other.json.or(self.json),
+                eval: other.eval.or(self.eval),
+                read_write_mode: other.read_write_mode.or(self.read_write_mode),
+                readonly_mode: other.readonly_mode.or(self.readonly_mode),
+            }
+        }
+    }
+
+    impl NixInstantiateOptions {
+        pub fn to_cli_arguments(&self) -> Vec<String> {
+            let mut arguments: Vec<String> = Vec::new();
+
+            if self.expression.unwrap_or(false) {
+                arguments.push("--expr".to_string());
+            }
+            if self.strict.unwrap_or(false) {
+                arguments.push("--strict".to_string());
+            }
+            if self.json.unwrap_or(false) {
+                arguments.push("--json".to_string());
+            }
+            if self.eval.unwrap_or(false) {
+                arguments.push("--eval".to_string());
+            }
+            if self.read_write_mode.unwrap_or(false) {
+                arguments.push("--read-write-mode".to_string());
+            }
+            if self.readonly_mode.unwrap_or(false) {
+                arguments.push("--readonly-mode".to_string());
+            }
+
+            arguments
+        }
     }
 }
 
