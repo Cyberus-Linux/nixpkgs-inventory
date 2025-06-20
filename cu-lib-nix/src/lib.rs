@@ -120,6 +120,12 @@ pub mod nix {
 
         Ok(DerivationReferences { paths, derivations })
     }
+
+    /// Given a serializable value, encodes it as JSON, then again so it can be given to `--arg`.
+    pub fn double_encode<T: Serialize>(value: T) -> String {
+        let first = serde_json::to_string(&value).unwrap();
+        serde_json::to_string(&first).unwrap()
+    }
 }
 
 /// CLI-specific types for cake-unbaker
