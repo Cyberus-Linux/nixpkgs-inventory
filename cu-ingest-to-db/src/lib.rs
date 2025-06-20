@@ -10,6 +10,7 @@ pub mod derivation {
     use cu_lib_nix::nix;
     use serde::{Deserialize, Serialize};
     use std::collections::BTreeMap;
+    use std::collections::HashSet;
 
     #[derive(Serialize, Deserialize, Debug)]
     #[serde(untagged)]
@@ -60,7 +61,7 @@ pub mod derivation {
         pub outputs: BTreeMap<String, String>,
         pub pname: Option<String>,
         pub version: Option<String>,
-        pub srcs: Vec<String>,
+        pub srcs: HashSet<String>,
         pub patches: Vec<String>,
     }
 
@@ -162,8 +163,11 @@ pub fn ingest_evaluation(conn: &database::AttributesDatabase, results: evaluatio
                 .expect("Unable to execute insert for derivation_output_paths");
             }
 
+            // Some derivations may refer to the same source archive more than once.
+            let srcs: Vec<_> = result.srcs.clone().into_iter().collect();
+
             // Save inputs for a given drv.
-            for (input_type, list) in [("src", &result.srcs), ("patch", &result.patches)] {
+            for (input_type, list) in [("src", &srcs), ("patch", &result.patches)] {
                 for store_path in list {
                     eprintln!("   {}: {}", input_type, store_path);
                     conn.insert(
@@ -398,6 +402,7 @@ mod tests {
               "patches": [],
               "pname": "hello",
               "srcs": [
+                "/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-hello-2.12.1.tar.gz",
                 "/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-hello-2.12.1.tar.gz"
               ],
               "version": "2.12.1"
@@ -414,6 +419,11 @@ mod tests {
             assert_eq!(
                 data.meta.unwrap().description,
                 Some("Program that produces a familiar, friendly greeting".to_string())
+            );
+            let srcs: Vec<_> = data.srcs.clone().into_iter().collect();
+            assert_eq!(
+                srcs,
+                vec!["/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-hello-2.12.1.tar.gz"],
             );
         }
     }
