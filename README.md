@@ -23,6 +23,32 @@ Example use:
 > *This command follows the conventions of the standard `nix-*` CLI regarding the input expression*
 
 
+Usage tips
+----------
+
+### Using without an accessible Nix store
+
+By using `NIX_REMOTE`, it is possible to make Nix (even the standard CLI) use an alternative store path.
+
+```bash
+$ export NIX_REMOTE="local?root=$PWD/some-store"
+
+$ cake-unbaker pkgs store-path ..../nixos-unstable/
+fetching git input 'git+file:///.../nixos-unstable'
+/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-source
+
+$ file some-store/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-source
+some-store/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-source: directory
+```
+
+This is especially useful when running the tool within a Nix build.
+
+See:
+
+ - https://nix.dev/manual/nix/2.29/store/types/index.html
+ - https://nix.dev/manual/nix/latest/store/types/index.html
+
+
 Hacking
 -------
 
