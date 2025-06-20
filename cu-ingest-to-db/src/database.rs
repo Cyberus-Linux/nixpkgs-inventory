@@ -146,6 +146,23 @@ impl AttributesDatabase {
 
         self.execute(&query, params)
     }
+
+    pub fn has_evaluation(&self, id: &String) -> bool {
+        let result = self
+            .query_one(
+                &format!(
+                    "SELECT COUNT(*) FROM {} WHERE id = :id",
+                    Table::EvaluationInformations.get_name()
+                ),
+                named_params! {
+                    ":id": &id,
+                },
+                |row| row.get::<usize, usize>(0),
+            )
+            .unwrap();
+
+        result > 0
+    }
 }
 
 /// Shortcut for AttributesDatabase::open()
