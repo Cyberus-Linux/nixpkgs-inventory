@@ -3,3 +3,4 @@ result
 result-*
 *.sqlite
 *.json
+*.zst
