@@ -17,6 +17,11 @@ enum Commands {
         #[command(subcommand)]
         command: DerivationCommands,
     },
+    /// Commands to inspect package sets
+    Pkgs {
+        #[command(subcommand)]
+        command: PkgsCommands,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -35,6 +40,28 @@ enum DerivationCommands {
     },
 }
 
+#[derive(Subcommand, Debug)]
+enum PkgsCommands {
+    /// Index a package set attributes and derivations
+    /// Import package set, from reference, to the store.
+    ///
+    /// This provides a relatively stable identifier (the store path) for a given package set
+    /// reference.
+    ///
+    /// Allowed reference types:
+    ///   - Path
+    ///
+    /// When given a path, if it is detected to be a Git repository, use the reference as
+    /// `fetchGit` input.
+    ///
+    /// The “same” inputs should produce the same store paths, whichever source they are coming
+    /// from, as much as possible.
+    ///
+    /// The name of the store path is printed on the standard output.
+    #[command(verbatim_doc_comment)]
+    StorePath { reference: nix::SourceReference },
+}
+
 fn main() -> Result<(), String> {
     let cli = Cli::parse();
     match &cli.command {
@@ -45,6 +72,11 @@ fn main() -> Result<(), String> {
                 let io = std::io::stdout();
                 serde_json::to_writer_pretty(io, &result)
                     .expect("Unexpected error while converting to JSON...");
+            }
+        },
+        Commands::Pkgs { command } => match command {
+            PkgsCommands::StorePath { reference } => {
+                println!("{}", nix::normalized_add_to_store(reference)?)
             }
         },
     };
