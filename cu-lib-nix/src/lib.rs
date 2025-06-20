@@ -9,6 +9,7 @@ pub mod nix {
     use regex::Regex;
     use serde::de::DeserializeOwned;
     use serde::{Deserialize, Serialize};
+    use std::fmt;
     use std::process::Command;
     use std::process::Stdio;
     use std::str::FromStr;
@@ -35,12 +36,32 @@ pub mod nix {
         pub reference_type: ReferenceType,
     }
 
+    impl fmt::Display for SourceReference {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(
+                f,
+                "SourceReference({}, {})",
+                self.reference_type, self.reference
+            )
+        }
+    }
+
     #[derive(Serialize, Deserialize, Clone, Debug)]
     pub enum ReferenceType {
         #[serde(rename = "path")]
         Path,
         #[serde(rename = "url")]
         Url,
+    }
+
+    impl fmt::Display for ReferenceType {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            let ret = match self {
+                ReferenceType::Path => "path",
+                ReferenceType::Url => "url",
+            };
+            write!(f, "{}", ret)
+        }
     }
 
     impl FromStr for SourceReference {
