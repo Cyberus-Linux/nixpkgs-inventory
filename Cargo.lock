@@ -72,6 +72,8 @@ name = "cake-unbaker"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "cu-fast-eval",
+ "cu-ingest-to-db",
  "cu-lib-nix",
  "serde",
  "serde_json",

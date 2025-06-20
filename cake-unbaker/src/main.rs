@@ -1,3 +1,4 @@
+use cu_ingest_to_db::database;
 use cu_lib_nix::nix;
 
 use clap::{Parser, Subcommand};
@@ -43,6 +44,15 @@ enum DerivationCommands {
 #[derive(Subcommand, Debug)]
 enum PkgsCommands {
     /// Index a package set attributes and derivations
+    #[command(verbatim_doc_comment)]
+    Index {
+        database: String,
+        /// Package sets, from references, to add to the database.
+        ///
+        /// The package sets will have their paths normalized by adding them to the Nix store.
+        /// See `cake-unbaker pkgs store-path` for allowed reference types.
+        references: Vec<nix::SourceReference>,
+    },
     /// Import package set, from reference, to the store.
     ///
     /// This provides a relatively stable identifier (the store path) for a given package set
@@ -75,6 +85,71 @@ fn main() -> Result<(), String> {
             }
         },
         Commands::Pkgs { command } => match command {
+            PkgsCommands::Index {
+                database,
+                references,
+            } => {
+                let db = database::open(&database)
+                    .expect("Unexpected error while opening the database.");
+
+                eprintln!(":: Normalizing references...");
+                let mut new_drvs = Vec::new();
+                let paths: Vec<_> = references
+                    .iter()
+                    .map(|reference| {
+                        eprintln!("   {reference}");
+                        let path = nix::normalized_add_to_store(reference).unwrap();
+                        eprintln!("   Normalized to: {path}");
+                        (reference, path)
+                    })
+                    .collect();
+
+                eprintln!("\n:: Evaluating references...");
+                for (_reference, path) in paths {
+                    // First check if the database already knows about the (normalized) store path.
+                    if db.has_evaluation(&path) {
+                        eprintln!(
+                            "    ← Skipping evaluation for {}. Already in database.",
+                            &path
+                        );
+                        continue;
+                    }
+                    eprintln!("    → Evaluating {path}...");
+
+                    let instantiate_options = nix::cli::NixInstantiateOptions {
+                        read_write_mode: Some(true),
+                        ..nix::cli::NixInstantiateOptions::default()
+                    };
+
+                    let expression_input = nix::cli::NixCliExpression::Path(Some(path.clone()));
+                    let expression_arguments = {
+                        let mut args = nix::cli::NixCliExpressionArguments::new();
+                        args.insert("config".to_string(), "{ allowAliases = false; }".to_string());
+                        args.insert("currentSystem".to_string(), "builtins.currentSystem".to_string());
+                        // FIXME: internalize handling filter/recurse in chunked_eval
+                        args.insert("filter".to_string(), "value: builtins.isAttrs value && value ? drvPath".to_string());
+                        args.insert("recurse".to_string(), "value: (value.recurseForDerivations or false) != false".to_string());
+                        args
+                    };
+
+                    let expression_fragment =
+                        cu_fast_eval::nix::build_nix_cli_import_semantics_fragment(
+                            &expression_input,
+                            &expression_arguments,
+                        )?;
+
+                    let results = cu_fast_eval::nix::evaluate_chunked(
+                        cu_fast_eval::nix::DEFAULT_MAX_ALLOWABLE_PER_CHUNK,
+                        &expression_fragment,
+                        &expression_arguments,
+                        &instantiate_options,
+                    )?;
+
+                    new_drvs.append(&mut cu_ingest_to_db::ingest_evaluation(
+                        &db, results, &path,
+                    ));
+                }
+            }
             PkgsCommands::StorePath { reference } => {
                 println!("{}", nix::normalized_add_to_store(reference)?)
             }
