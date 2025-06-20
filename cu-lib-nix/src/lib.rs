@@ -6,10 +6,12 @@ use std::process::Command;
 pub mod nix {
     use crate::cli;
     use crate::log_command;
+    use regex::Regex;
     use serde::de::DeserializeOwned;
     use serde::{Deserialize, Serialize};
     use std::process::Command;
     use std::process::Stdio;
+    use std::str::FromStr;
 
     // Allow hardcoding a specific `nix-instantiate` at build-time, obviating the need for a wrapper.
     pub const COMMAND_NIX_INSTANTIATE: &str = match option_env!("COMMAND_NIX_INSTANTIATE") {
@@ -25,6 +27,48 @@ pub mod nix {
 
     /// Used to better convey intent.
     pub type StorePath = String;
+
+    /// Reference to a source input.
+    #[derive(Serialize, Deserialize, Clone, Debug)]
+    pub struct SourceReference {
+        pub reference: String,
+        pub reference_type: ReferenceType,
+    }
+
+    #[derive(Serialize, Deserialize, Clone, Debug)]
+    pub enum ReferenceType {
+        #[serde(rename = "path")]
+        Path,
+        #[serde(rename = "url")]
+        Url,
+    }
+
+    impl FromStr for SourceReference {
+        type Err = String;
+        /// Given a string input, sniffs out its structure.
+        fn from_str(reference: &str) -> Result<Self, Self::Err> {
+            let mut reference = reference.to_string();
+            let re = Regex::new(r"^[a-zA-Z0-9]+://").unwrap();
+
+            // Special-case `file://` URLs. Only handle "absolute paths".
+            // (Nix rejects `file://<authority>/...`, so in practice only handles absolute paths)
+            if reference.starts_with("file:///") {
+                reference = reference[7..].to_string();
+            }
+
+            if re.is_match(&reference) {
+                Ok(SourceReference {
+                    reference,
+                    reference_type: ReferenceType::Url,
+                })
+            } else {
+                Ok(SourceReference {
+                    reference,
+                    reference_type: ReferenceType::Path,
+                })
+            }
+        }
+    }
 
     /// An attribute path is a list representing the path to a value in (possibly nested) attribute sets.
     pub type AttributePath = Vec<String>;
@@ -125,6 +169,18 @@ pub mod nix {
     pub fn double_encode<T: Serialize>(value: T) -> String {
         let first = serde_json::to_string(&value).unwrap();
         serde_json::to_string(&first).unwrap()
+    }
+
+    /// Given a source reference, imports it to the store and returns the now normalized store path.
+    pub fn normalized_add_to_store(reference: &SourceReference) -> Result<String, String> {
+        const EXPR: &str = include_str!("nix/normalize-to-store.nix");
+        let mut arguments = cli::NixCliExpressionArguments::new();
+        arguments.insert("reference".to_string(), double_encode(reference));
+        evaluate(
+            &EXPR.to_string(),
+            arguments,
+            cli::NixInstantiateOptions::default(),
+        )
     }
 }
 
