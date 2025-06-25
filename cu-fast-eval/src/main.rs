@@ -5,7 +5,7 @@ use cu_fast_eval::evaluation;
 use cu_fast_eval::get_env_int;
 use cu_fast_eval::nix;
 use cu_fast_eval::nix::{build_nix_cli_import_semantics_fragment, evaluate_chunk, get_attributes};
-use cu_lib_nix::nix::cli::{NixCliExpression, NixCliExpressionArguments};
+use cu_lib_nix::nix::cli::{NixCliExpression, NixCliExpressionArguments, NixInstantiateOptions};
 use cu_lib_nix::nix::AttributePaths;
 
 use clap::Parser;
@@ -96,6 +96,20 @@ impl Args {
 
         cli_args
     }
+
+    pub fn to_instantiate_options(&self) -> NixInstantiateOptions {
+        let args = Args::parse();
+        let mut options = NixInstantiateOptions::default();
+
+        if args.show_trace {
+            options.show_trace = Some(true);
+        }
+        if args.read_write_mode {
+            options.read_write_mode = Some(true);
+        }
+
+        options
+    }
 }
 
 fn main() -> Result<(), String> {
@@ -107,6 +121,7 @@ fn main() -> Result<(), String> {
 
     // Build the shared CLI arguments for `nix-instantiate`.
     let mut common_args = args.to_standard_nix_cli_arguments();
+    let instantiate_options = args.to_instantiate_options();
 
     let expression_input = if args.is_expression {
         NixCliExpression::Expression(args.file)
@@ -114,7 +129,7 @@ fn main() -> Result<(), String> {
         NixCliExpression::Path(args.file)
     };
 
-    let expression_arguments = {
+    let mut expression_arguments = {
         let mut ret = NixCliExpressionArguments::new();
         match args.nix_args {
             Some(args) => {
@@ -146,19 +161,19 @@ fn main() -> Result<(), String> {
     // This is the attribute set being evaluated.
     common_args.push("--arg".to_string());
     common_args.push("attrs".to_string());
+    let attribute_set = build_nix_cli_import_semantics_fragment(
+        expression_input.clone(),
+        expression_arguments.clone(),
+    )
+    .unwrap_or_else(|msg| {
+        eprintln!("error: {}", msg);
+        std::process::exit(1);
+    });
+    expression_arguments.insert("attrs".to_string(), attribute_set.to_string());
 
     // This represents the "user input".
     // The frament produced here is equivalent to the nix-* CLI semantics.
-    common_args.push(
-        build_nix_cli_import_semantics_fragment(
-            expression_input.clone(),
-            expression_arguments.clone(),
-        )
-        .unwrap_or_else(|msg| {
-            eprintln!("error: {}", msg);
-            std::process::exit(1);
-        }),
-    );
+    common_args.push(attribute_set);
 
     // No value? Use PROCESSOR_COUNT if available. This is part of the public API.
     if args.cores.is_none() {
@@ -239,7 +254,7 @@ fn main() -> Result<(), String> {
             // In that case, this could take longer than evaluating the attribute set in a serial
             // manner. Though this shouldn't happen.
             //
-            let data = evaluate_chunk(&common_args, chunk_path)
+            let data = evaluate_chunk(chunk_path, &expression_arguments, &instantiate_options)
                 .unwrap_or_else(|_| panic!("Unexpected error while handling chunk {}", chunk_path))
                 .as_array()
                 .unwrap_or_else(|| panic!("Unexpected error while handling chunk {}", chunk_path))
