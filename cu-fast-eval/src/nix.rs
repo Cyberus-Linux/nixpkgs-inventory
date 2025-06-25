@@ -1,12 +1,22 @@
+use std::cmp;
+use std::env;
+use std::fs;
 use std::path::PathBuf;
 
+use rayon::prelude::*;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
+use crate::evaluation;
 use cu_lib_nix::nix;
 use nix::cli::{NixCliExpression, NixCliExpressionArguments};
 use nix::AttributePath;
 use nix::AttributePaths;
+
+// This is arbitrary, but looked like a good boundary for memory consumption.
+// It's also sufficiently big that on a single-system Nixpkgs eval, it's bigger
+// than `attributes.len() / 16`.
+pub const DEFAULT_MAX_ALLOWABLE_PER_CHUNK: usize = 16_000;
 
 const NIX_EXPR_CLI_IMPORT: &str = include_str!("nix/cli-import.nix");
 const NIX_EXPR_DUMP_ATTRIBUTES: &str = include_str!("nix/dump-attributes.nix");
@@ -111,11 +121,156 @@ pub fn evaluate_chunk<T: DeserializeOwned>(
     path: &str,
     expression_arguments: &nix::cli::NixCliExpressionArguments,
     options: &nix::cli::NixInstantiateOptions,
-) -> Result<Vec<AttributeResult<T>>, String> {
+) -> Result<evaluation::Results<T>, String> {
     let mut arguments = expression_arguments.clone();
     arguments.insert("chunkPath".to_string(), path.to_string());
 
-    nix::evaluate(&NIX_EXPR_PROCESS_CHUNK.to_string(), &arguments, options)
+    let results = nix::evaluate::<Vec<AttributeResult<T>>>(
+        &NIX_EXPR_PROCESS_CHUNK.to_string(),
+        &arguments,
+        options,
+    )?;
+
+    let attributes_with_errors: AttributePaths = results
+        .iter()
+        .filter_map(|result| {
+            if !result.success {
+                Some(result.attr_path.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let data: Vec<T> = results
+        .into_iter()
+        .filter_map(|result| {
+            if result.success {
+                Some(result.value)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    Ok(evaluation::Results {
+        // Returning None as `expression` may not be the intended user-facing expression.
+        // It may be a wrapper specific to the specifc usage of `evaluate_chunked`.
+        evaluation_input: None,
+        evaluation_arguments: Some(expression_arguments.clone()),
+        attributes_with_errors,
+        data,
+    })
+}
+
+/// Evaluates the given expression and arguments in chunks.
+///
+/// The Nix `expression` must resolve to an attribute set.
+pub fn evaluate_chunked<T: DeserializeOwned + std::marker::Send>(
+    mut max_chunk_size: usize,
+    expression: &str,
+    expression_arguments: &nix::cli::NixCliExpressionArguments,
+    options: &nix::cli::NixInstantiateOptions,
+) -> Result<evaluation::Results<T>, String> {
+    let verbose = !env::var("VERBOSE").unwrap_or("".to_string()).is_empty();
+
+    // Path used to serialize the data, so it can be dropped from memory.
+    let workdir = tempfile::tempdir().unwrap();
+
+    // The user-provided expression is given as `attrs` to `process-chunk.nix`.
+    let mut evaluation_arguments = expression_arguments.clone();
+    evaluation_arguments.insert("attrs".to_string(), expression.to_string());
+
+    let attributes = get_attributes(&evaluation_arguments, options).unwrap();
+
+    // Let rayon tell us what ended-up being chosen.
+    let cores = rayon::current_num_threads();
+
+    // The smallest between:
+    //  - The maximum allowable attributes per chunks
+    //  - The natural distributed chunk size
+    let optimal_chunk_size = cmp::min(
+        DEFAULT_MAX_ALLOWABLE_PER_CHUNK,
+        // NOTE: We're `ceil`ing here so we have *at most* `cores` chunks.
+        // Otherwise we'd get `cores + 1` chunks with remainders in the additional one.
+        (attributes.len() as f64 / cores as f64).ceil() as usize,
+    );
+    if max_chunk_size > optimal_chunk_size {
+        max_chunk_size = optimal_chunk_size;
+    }
+
+    // Evaluate attribute names, and turn into chunks of JSON, as files.
+    let chunk_paths: Vec<_> = attributes
+        .chunks(max_chunk_size)
+        .enumerate()
+        .map(|(i, chunk)| {
+            let path = workdir.path().join(format!("eval-chunk.{:08}.json", i));
+            fs::write(&path, serde_json::to_string_pretty(&chunk).unwrap())
+                .expect("Error while writing attributes to file...");
+            path
+        })
+        .collect();
+
+    if verbose {
+        eprintln!("\n");
+        eprintln!(":: Cores: {}", cores);
+        eprintln!(":: Attributes count: {}", attributes.len());
+        eprintln!(":: Optimal chunk size: {}", optimal_chunk_size);
+        eprintln!(":: Current chunk size: {}", max_chunk_size);
+        eprintln!(":: Chunk count: {}", chunk_paths.len());
+    }
+
+    drop(attributes);
+
+    let mut result = chunk_paths
+        .par_iter()
+        .map(|chunk_path| {
+            let chunk_path = chunk_path.to_str().unwrap();
+
+            //
+            // TODO: Implement recovering from *fatal* evaluation errors.
+            // This can be achieved by
+            //   (1) making the `process::exit()` into an error type return
+            //   (2) making the `chunk_paths` handling a queue that can be filled during execution
+            //   (3) if more than one argument in chunk
+            //         split the chunk in two parts, re-queue
+            //       else
+            //         mark as a fatal evaluation failure
+            //
+            // NOTE: A normal Nixpkgs evaluation from a successful channel should never hit a fatal
+            //       evaluation failure, or else something went wrong with CI.
+            //
+            // This will slow down evaluation in the exceptional case where there is a fatal
+            // evaluation failure, but since we are already chunking it will still be quick enough,
+            // as long as we're not hitting the pathological case of every attribute failing.
+            // In that case, this could take longer than evaluating the attribute set in a serial
+            // manner. Though this shouldn't happen.
+            //
+            evaluate_chunk::<T>(chunk_path, &evaluation_arguments, options).unwrap_or_else(|err| {
+                panic!(
+                    "Unexpected error while handling chunk {} ({err})",
+                    chunk_path
+                )
+            })
+        })
+        .reduce(
+            || evaluation::Results {
+                evaluation_arguments: None,
+                evaluation_input: None,
+                attributes_with_errors: vec![],
+                data: vec![],
+            },
+            |mut acc, mut curr| {
+                acc.attributes_with_errors
+                    .append(&mut curr.attributes_with_errors);
+                acc.data.append(&mut curr.data);
+                acc
+            },
+        );
+
+    result.evaluation_arguments = Some(expression_arguments.clone());
+
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -217,9 +372,7 @@ mod tests {
 
         let result: Vec<serde_json::Value> = evaluate_chunk(path, &expression_arguments, &options)
             .unwrap()
-            .into_iter()
-            .map(|r| r.value)
-            .collect();
+            .data;
 
         // FIXME: This is unlikely to be fun to work with.
         // TODO: evaluate_chunk should take an argument to transform values.

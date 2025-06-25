@@ -1,20 +1,11 @@
-use std::cmp;
-use std::fs;
-
-use cu_fast_eval::evaluation;
-use cu_fast_eval::get_env_int;
-use cu_fast_eval::nix;
-use cu_fast_eval::nix::{build_nix_cli_import_semantics_fragment, evaluate_chunk, get_attributes};
-use cu_lib_nix::nix::cli::{NixCliExpression, NixCliExpressionArguments, NixInstantiateOptions};
-use cu_lib_nix::nix::AttributePaths;
+use std::env;
 
 use clap::Parser;
-use rayon::prelude::*;
 
-// This is arbitrary, but looked like a good boundary for memory consumption.
-// It's also sufficiently big that on a single-system Nixpkgs eval, it's bigger
-// than `attributes.len() / 16`.
-const DEFAULT_MAX_ALLOWABLE_PER_CHUNK: usize = 16_000;
+use cu_fast_eval::get_env_int;
+use cu_fast_eval::nix;
+use cu_fast_eval::nix::{build_nix_cli_import_semantics_fragment, evaluate_chunked};
+use cu_lib_nix::nix::cli::{NixCliExpression, NixCliExpressionArguments, NixInstantiateOptions};
 
 #[derive(Parser, Debug)]
 #[command(version)]
@@ -26,7 +17,7 @@ struct Args {
     #[arg(long)]
     /// Number of threads to use. [default: logical cpu count]
     cores: Option<usize>,
-    #[arg(long, default_value_t = DEFAULT_MAX_ALLOWABLE_PER_CHUNK)]
+    #[arg(long, default_value_t = nix::DEFAULT_MAX_ALLOWABLE_PER_CHUNK)]
     /// Maximum size for a chunk.
     max_chunk_size: usize,
 
@@ -99,8 +90,7 @@ impl Args {
 }
 
 fn main() -> Result<(), String> {
-    // Path used to serialize the data, so it can be dropped from memory.
-    let workdir = tempfile::tempdir().unwrap();
+    let verbose = !env::var("VERBOSE").unwrap_or("".to_string()).is_empty();
 
     // Parse CLI
     let mut args = Args::parse();
@@ -140,15 +130,12 @@ fn main() -> Result<(), String> {
     // This is the attribute set being evaluated.
     // This represents the "user input".
     // The fragment produced here is equivalent to the nix-* CLI semantics.
-    let attribute_set = build_nix_cli_import_semantics_fragment(
-        &expression_input,
-        &expression_arguments,
-    )
-    .unwrap_or_else(|msg| {
-        eprintln!("error: {}", msg);
-        std::process::exit(1);
-    });
-    expression_arguments.insert("attrs".to_string(), attribute_set.to_string());
+    let expression_fragment =
+        build_nix_cli_import_semantics_fragment(&expression_input, &expression_arguments)
+            .unwrap_or_else(|msg| {
+                eprintln!("error: {}", msg);
+                std::process::exit(1);
+            });
 
     // No value? Use PROCESSOR_COUNT if available. This is part of the public API.
     if args.cores.is_none() {
@@ -167,118 +154,21 @@ fn main() -> Result<(), String> {
             .unwrap();
     }
 
-    // Let rayon tell us what ended-up being chosen.
-    let cores = rayon::current_num_threads();
-
-    eprintln!("\n:: Evaluating attributes\n");
-
-    let attributes = get_attributes(&expression_arguments, &instantiate_options).unwrap();
-    // The smallest between:
-    //  - The maximum allowable attributes per chunks
-    //  - The natural distributed chunk size
-    let optimal_chunk_size = cmp::min(
-        DEFAULT_MAX_ALLOWABLE_PER_CHUNK,
-        // NOTE: We're `ceil`ing here so we have *at most* `cores` chunks.
-        // Otherwise we'd get `cores + 1` chunks with remainders in the additional one.
-        (attributes.len() as f64 / cores as f64).ceil() as usize,
-    );
-    if args.max_chunk_size > optimal_chunk_size {
-        args.max_chunk_size = optimal_chunk_size;
+    if verbose {
+        eprintln!("\n:: Starting evaluation...\n");
     }
 
-    // Evaluate attribute names, and turn into chunks of JSON, as files.
-    let chunk_paths: Vec<_> = attributes
-        .chunks(args.max_chunk_size)
-        .enumerate()
-        .map(|(i, chunk)| {
-            let path = workdir.path().join(format!("eval-chunk.{:08}.json", i));
-            fs::write(&path, serde_json::to_string_pretty(&chunk).unwrap())
-                .expect("Error while writing attributes to file...");
-            path
-        })
-        .collect();
+    let mut result = evaluate_chunked::<serde_json::Value>(
+        args.max_chunk_size,
+        &expression_fragment,
+        &expression_arguments,
+        &instantiate_options,
+    )
+    .expect("Chunked evaluation unexpectedly failed");
 
-    eprintln!("\n");
-    eprintln!(":: Cores: {}", cores);
-    eprintln!(":: Attributes count: {}", attributes.len());
-    eprintln!(":: Optimal chunk size: {}", optimal_chunk_size);
-    eprintln!(":: Current chunk size: {}", args.max_chunk_size);
-    eprintln!(":: Chunk count: {}", chunk_paths.len());
-
-    drop(attributes);
-
-    let mut result = chunk_paths
-        .par_iter()
-        .map(|chunk_path| {
-            let chunk_path = chunk_path.to_str().unwrap();
-
-            //
-            // TODO: Implement recovering from *fatal* evaluation errors.
-            // This can be achieved by
-            //   (1) making the `process::exit()` into an error type return
-            //   (2) making the `chunk_paths` handling a queue that can be filled during execution
-            //   (3) if more than one argument in chunk
-            //         split the chunk in two parts, re-queue
-            //       else
-            //         mark as a fatal evaluation failure
-            //
-            // NOTE: A normal Nixpkgs evaluation from a successful channel should never hit a fatal
-            //       evaluation failure, or else something went wrong with CI.
-            //
-            // This will slow down evaluation in the exceptional case where there is a fatal
-            // evaluation failure, but since we are already chunking it will still be quick enough,
-            // as long as we're not hitting the pathological case of every attribute failing.
-            // In that case, this could take longer than evaluating the attribute set in a serial
-            // manner. Though this shouldn't happen.
-            //
-            let data = evaluate_chunk::<serde_json::Value>(
-                chunk_path,
-                &expression_arguments,
-                &instantiate_options,
-            )
-            .unwrap_or_else(|_| panic!("Unexpected error while handling chunk {}", chunk_path));
-
-            let file = fs::File::open(chunk_path)
-                .expect("Unexpected error while opening JSON chunk information...");
-
-            let chunk_attributes: AttributePaths = serde_json::from_reader(file)
-                .expect("Unexpected error while parsing JSON chunk information...");
-
-            let good_attributes = data
-                .iter()
-                .map(|entry| entry.attr_path.clone())
-                .collect::<AttributePaths>()
-                .to_vec();
-
-            let attributes_with_errors = chunk_attributes
-                .into_iter()
-                .filter(|el| !good_attributes.contains(el))
-                .collect::<AttributePaths>()
-                .to_vec();
-
-            evaluation::Results {
-                evaluation_arguments: None,
-                evaluation_input: None,
-                attributes_with_errors,
-                data,
-            }
-        })
-        .reduce(
-            || evaluation::Results {
-                evaluation_arguments: None,
-                evaluation_input: None,
-                attributes_with_errors: vec![],
-                data: vec![],
-            },
-            |mut acc, mut curr| {
-                acc.attributes_with_errors
-                    .append(&mut curr.attributes_with_errors);
-                acc.data.append(&mut curr.data);
-                acc
-            },
-        );
-
-    eprintln!("\n:: Writing output...\n");
+    if verbose {
+        eprintln!("\n:: Writing output...\n");
+    }
 
     let io: Box<dyn std::io::Write> = match args.output {
         Some(path) => Box::new(std::fs::File::create(&path).unwrap()),
@@ -286,9 +176,7 @@ fn main() -> Result<(), String> {
     };
 
     result.evaluation_arguments = Some(expression_arguments);
-
     result.evaluation_input = Some(expression_input);
-
     serde_json::to_writer_pretty(io, &result).expect("Error while writing results...");
 
     Ok(())
