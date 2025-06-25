@@ -141,8 +141,8 @@ fn main() -> Result<(), String> {
     // This represents the "user input".
     // The fragment produced here is equivalent to the nix-* CLI semantics.
     let attribute_set = build_nix_cli_import_semantics_fragment(
-        expression_input.clone(),
-        expression_arguments.clone(),
+        &expression_input,
+        &expression_arguments,
     )
     .unwrap_or_else(|msg| {
         eprintln!("error: {}", msg);

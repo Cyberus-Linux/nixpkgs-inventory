@@ -34,8 +34,8 @@ pub fn resolve_path(input_path: Option<String>) -> String {
 /// Returns a nix expression fragment that evaluates an expression with the same semantics as the
 /// standard nix-* CLI tools would.
 pub fn build_nix_cli_import_semantics_fragment(
-    expression: NixCliExpression,
-    arguments: NixCliExpressionArguments,
+    expression: &NixCliExpression,
+    arguments: &NixCliExpressionArguments,
 ) -> Result<String, String> {
     let expression_arguments = {
         let attrset_body = arguments
@@ -48,7 +48,7 @@ pub fn build_nix_cli_import_semantics_fragment(
 
     // The expression the user wants to see evaluated.
     // We need to wrap arguments handling in here.
-    let expression_input = match expression {
+    let expression_input = match expression.clone() {
         // The expression flag without a value is an error.
         NixCliExpression::Expression(None) => {
             return Err("An expression must be given with `--expr`.".to_string());
@@ -60,7 +60,7 @@ pub fn build_nix_cli_import_semantics_fragment(
         NixCliExpression::Path(Some(v)) => {
             // Convert argument to a Nix string (by using the fact JSON strings are pretty much
             // drop-in compatible with Nix strings).
-            let as_string: String = serde_json::json!(&v).to_string();
+            let as_string: String = serde_json::json!(v).to_string();
             // NOTE: By using a stringified string for the path (via JSON formatting), we can can ignore
             // marshalling the value to an "actual" path value, as long as we check for absolute or relative paths.
 
