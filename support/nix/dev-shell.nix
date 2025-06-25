@@ -3,6 +3,7 @@
 , cargo
 , rustc
 , clippy
+, rust-analyzer
 , rustfmt
 
 , subprojects
@@ -30,6 +31,7 @@ mkShell {
     cargo
     rustc
     clippy
+    rust-analyzer
     rustfmt
   ]
     # Pick all `dev-runner` attributes on this project's packages.
