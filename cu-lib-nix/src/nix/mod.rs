@@ -102,13 +102,13 @@ pub struct DerivationReferences {
 /// Returns the (deserialized from JSON) `T` evaluated result of a Nix expression.
 pub fn evaluate<T: DeserializeOwned>(
     expression: &String,
-    arguments: cli::NixCliExpressionArguments,
-    options: cli::NixInstantiateOptions,
+    arguments: &cli::NixCliExpressionArguments,
+    options: &cli::NixInstantiateOptions,
 ) -> Result<T, String> {
     let mut cmd = Command::new(COMMAND_NIX_INSTANTIATE);
 
     for (name, value) in arguments {
-        cmd.args(["--arg", &name, &value]);
+        cmd.args(["--arg", name, value]);
     }
 
     // NOTE: we are overriding the provided options, for the arguments we need strictly need.
@@ -196,7 +196,7 @@ pub fn normalized_add_to_store(reference: &SourceReference) -> Result<String, St
     arguments.insert("reference".to_string(), double_encode(reference));
     evaluate(
         &EXPR.to_string(),
-        arguments,
-        cli::NixInstantiateOptions::default(),
+        &arguments,
+        &cli::NixInstantiateOptions::default(),
     )
 }
