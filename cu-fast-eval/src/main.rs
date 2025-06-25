@@ -82,21 +82,7 @@ struct Args {
 }
 
 impl Args {
-    /// Parses the standard Nix CLI arguments, to an initial `cli_args` Vec.
-    pub fn to_standard_nix_cli_arguments(&self) -> Vec<String> {
-        let args = Args::parse();
-        let mut cli_args: Vec<String> = Vec::new();
-
-        if args.show_trace {
-            cli_args.push("--show-trace".to_string());
-        }
-        if args.read_write_mode {
-            cli_args.push("--read-write-mode".to_string());
-        }
-
-        cli_args
-    }
-
+    /// Parses the standard Nix CLI arguments, to NixInstantiateOptions.
     pub fn to_instantiate_options(&self) -> NixInstantiateOptions {
         let args = Args::parse();
         let mut options = NixInstantiateOptions::default();
@@ -120,15 +106,16 @@ fn main() -> Result<(), String> {
     let mut args = Args::parse();
 
     // Build the shared CLI arguments for `nix-instantiate`.
-    let mut common_args = args.to_standard_nix_cli_arguments();
     let instantiate_options = args.to_instantiate_options();
 
+    // Figure out what the expression to evaluate is.
     let expression_input = if args.is_expression {
         NixCliExpression::Expression(args.file)
     } else {
         NixCliExpression::Path(args.file)
     };
 
+    // Prepare expression arguments from CLI.
     let mut expression_arguments = {
         let mut ret = NixCliExpressionArguments::new();
         match args.nix_args {
@@ -144,23 +131,15 @@ fn main() -> Result<(), String> {
         ret
     };
 
-    //
-    // Build the CLI invocation for `nix-instantiate`.
-    //
-
     // The function used to determine if recursing is needed.
-    common_args.push("--arg".to_string());
-    common_args.push("recurse".to_string());
-    common_args.push(args.recurse_with);
+    expression_arguments.insert("recurse".to_string(), args.recurse_with);
 
     // The function used to determine if an attribute is kept.
-    common_args.push("--arg".to_string());
-    common_args.push("filter".to_string());
-    common_args.push(args.filter_with);
+    expression_arguments.insert("filter".to_string(), args.filter_with);
 
     // This is the attribute set being evaluated.
-    common_args.push("--arg".to_string());
-    common_args.push("attrs".to_string());
+    // This represents the "user input".
+    // The fragment produced here is equivalent to the nix-* CLI semantics.
     let attribute_set = build_nix_cli_import_semantics_fragment(
         expression_input.clone(),
         expression_arguments.clone(),
@@ -170,10 +149,6 @@ fn main() -> Result<(), String> {
         std::process::exit(1);
     });
     expression_arguments.insert("attrs".to_string(), attribute_set.to_string());
-
-    // This represents the "user input".
-    // The frament produced here is equivalent to the nix-* CLI semantics.
-    common_args.push(attribute_set);
 
     // No value? Use PROCESSOR_COUNT if available. This is part of the public API.
     if args.cores.is_none() {
@@ -195,7 +170,9 @@ fn main() -> Result<(), String> {
     // Let rayon tell us what ended-up being chosen.
     let cores = rayon::current_num_threads();
 
-    let attributes = get_attributes(&common_args).unwrap();
+    eprintln!("\n:: Evaluating attributes\n");
+
+    let attributes = get_attributes(&expression_arguments, &instantiate_options).unwrap();
     // The smallest between:
     //  - The maximum allowable attributes per chunks
     //  - The natural distributed chunk size

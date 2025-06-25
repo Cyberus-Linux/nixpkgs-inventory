@@ -1,12 +1,8 @@
 use std::path::PathBuf;
-use std::process::Command;
-use std::process::Stdio;
 
-use cu_lib_nix::log_command;
 use cu_lib_nix::nix;
 use nix::cli::{NixCliExpression, NixCliExpressionArguments};
 use nix::AttributePaths;
-use nix::COMMAND_NIX_INSTANTIATE;
 
 const NIX_EXPR_CLI_IMPORT: &str = include_str!("nix/cli-import.nix");
 const NIX_EXPR_DUMP_ATTRIBUTES: &str = include_str!("nix/dump-attributes.nix");
@@ -88,33 +84,14 @@ pub fn build_nix_cli_import_semantics_fragment(
 
 /// Returns a list of attr *paths* (lists of lists of attribute name parts).
 pub fn get_attributes(
-    common_args: &Vec<String>,
-) -> Result<AttributePaths, Box<dyn std::error::Error>> {
-    eprintln!("\n:: Evaluating attributes\n");
-
-    let mut cmd = Command::new(COMMAND_NIX_INSTANTIATE);
-    cmd.arg("--strict")
-        .arg("--json")
-        .arg("--eval")
-        .args(common_args)
-        .args(["--expr", NIX_EXPR_DUMP_ATTRIBUTES]);
-
-    log_command(&cmd);
-
-    let result = cmd
-        // Stream stderr to the console
-        .stderr(Stdio::inherit())
-        // Capture the output
-        .output()?;
-
-    // If the command failed *in a controlled manner*,
-    if !result.status.success() {
-        std::process::exit(result.status.code().unwrap());
-    }
-
-    // Parse result
-    serde_json::from_str(&String::from_utf8_lossy(&result.stdout))
-        .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
+    expression_arguments: &nix::cli::NixCliExpressionArguments,
+    options: &nix::cli::NixInstantiateOptions,
+) -> Result<AttributePaths, String> {
+    nix::evaluate(
+        &NIX_EXPR_DUMP_ATTRIBUTES.to_string(),
+        expression_arguments,
+        options,
+    )
 }
 
 /// Returns the serde_json Array of serde_json Objects for the evaluated list of Nix attribute sets.
@@ -126,20 +103,7 @@ pub fn evaluate_chunk(
     let mut arguments = expression_arguments.clone();
     arguments.insert("chunkPath".to_string(), path.to_string());
 
-    // NOTE: we are overriding the provided options, for the arguments we need strictly need.
-    let options = options.merge(nix::cli::NixInstantiateOptions {
-        // Value needs to be evaluated fully
-        strict: Some(true),
-        // Serialization format
-        json: Some(true),
-        // This is an evaluation, not an instantiation
-        eval: Some(true),
-        // We're passing an expression
-        expression: Some(true),
-        ..Default::default()
-    });
-
-    nix::evaluate(&NIX_EXPR_PROCESS_CHUNK.to_string(), arguments, options)
+    nix::evaluate(&NIX_EXPR_PROCESS_CHUNK.to_string(), &arguments, options)
 }
 
 #[cfg(test)]
@@ -149,26 +113,39 @@ mod tests {
     use nix::cli::NixInstantiateOptions;
     use std::fs;
 
+    const ALWAYS: &str = "v: true";
+
     #[test]
     fn check_get_attributes_empty() {
         let empty: AttributePaths = vec![];
-        let args = vec!["--show-trace", "--arg", "attrs", "{}"]
-            .into_iter()
-            .map(|s| s.to_string())
-            .collect();
-        let result = get_attributes(&args).unwrap();
+        let mut expression_arguments = NixCliExpressionArguments::new();
+        expression_arguments.insert("attrs".to_string(), "{}".to_string());
+
+        let options = NixInstantiateOptions {
+            show_trace: Some(true),
+            ..NixInstantiateOptions::default()
+        };
+
+        let result = get_attributes(&expression_arguments, &options).unwrap();
         assert_eq!(result, empty);
     }
+
     #[test]
     fn check_get_attributes_single() {
         let single: AttributePaths = vec![vec!["a".to_string()]];
-        let args = vec!["--show-trace", "--arg", "attrs", r#"{ a = 1; }"#]
-            .into_iter()
-            .map(|s| s.to_string())
-            .collect();
-        let result = get_attributes(&args).unwrap();
+
+        let mut expression_arguments = NixCliExpressionArguments::new();
+        expression_arguments.insert("attrs".to_string(), r#"{ a = 1; }"#.to_string());
+
+        let options = NixInstantiateOptions {
+            show_trace: Some(true),
+            ..NixInstantiateOptions::default()
+        };
+
+        let result = get_attributes(&expression_arguments, &options).unwrap();
         assert_eq!(result, single);
     }
+
     #[test]
     fn check_get_attributes_recursive() {
         let recursive: AttributePaths = vec![
@@ -177,19 +154,20 @@ mod tests {
             vec!["c".to_string()],
             vec!["c".to_string(), "d".to_string()],
         ];
-        let args = vec![
-            "--show-trace",
-            "--arg",
-            "recurse",
-            r#"_: true"#,
-            "--arg",
-            "attrs",
-            r#"{ a.b = 1; c.d = builtins.throw "ok"; }"#,
-        ]
-        .into_iter()
-        .map(|s| s.to_string())
-        .collect();
-        let result = get_attributes(&args).unwrap();
+
+        const EXPR: &str = r#"{ a.b = 1; c.d = builtins.throw "ok"; }"#;
+
+        let mut expression_arguments = NixCliExpressionArguments::new();
+        expression_arguments.insert("attrs".to_string(), EXPR.to_string());
+        expression_arguments.insert("filter".to_string(), ALWAYS.to_string());
+        expression_arguments.insert("recurse".to_string(), ALWAYS.to_string());
+
+        let options = NixInstantiateOptions {
+            show_trace: Some(true),
+            ..NixInstantiateOptions::default()
+        };
+
+        let result = get_attributes(&expression_arguments, &options).unwrap();
         assert_eq!(result, recursive);
     }
 
@@ -202,7 +180,6 @@ mod tests {
         fs::write(path, serde_json::to_string_pretty(&chunk).unwrap())
             .expect("Error while writing attributes to file...");
 
-        const NO_FILTER: &str = "v: true";
         const EXPR: &str = r#"
               let
                   mkDrv =
@@ -223,7 +200,7 @@ mod tests {
         };
 
         let mut expression_arguments = NixCliExpressionArguments::new();
-        expression_arguments.insert("filter".to_string(), NO_FILTER.to_string());
+        expression_arguments.insert("filter".to_string(), ALWAYS.to_string());
         expression_arguments.insert("attrs".to_string(), EXPR.to_string());
 
         let result = evaluate_chunk(path, &expression_arguments, &options).unwrap();
