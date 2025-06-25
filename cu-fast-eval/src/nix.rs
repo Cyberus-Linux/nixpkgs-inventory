@@ -119,40 +119,34 @@ pub fn get_attributes(
 
 /// Returns the serde_json Array of serde_json Objects for the evaluated list of Nix attribute sets.
 pub fn evaluate_chunk(
-    common_args: &Vec<String>,
     path: &str,
-) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
-    let mut cmd = Command::new(COMMAND_NIX_INSTANTIATE);
-    cmd.arg("--strict")
-        .arg("--json")
-        .arg("--eval")
-        .args(common_args)
-        .args(["--expr", NIX_EXPR_PROCESS_CHUNK]);
+    expression_arguments: &nix::cli::NixCliExpressionArguments,
+    options: &nix::cli::NixInstantiateOptions,
+) -> Result<serde_json::Value, String> {
+    let mut arguments = expression_arguments.clone();
+    arguments.insert("chunkPath".to_string(), path.to_string());
 
-    // Ensure `chunkPath` is the one we are passing to `nix-instantiate`.
-    cmd.args(["--arg", "chunkPath", path]);
+    // NOTE: we are overriding the provided options, for the arguments we need strictly need.
+    let options = options.merge(nix::cli::NixInstantiateOptions {
+        // Value needs to be evaluated fully
+        strict: Some(true),
+        // Serialization format
+        json: Some(true),
+        // This is an evaluation, not an instantiation
+        eval: Some(true),
+        // We're passing an expression
+        expression: Some(true),
+        ..Default::default()
+    });
 
-    log_command(&cmd);
-
-    let result = cmd
-        // Stream stderr to the console
-        .stderr(Stdio::inherit())
-        // Capture the output
-        .output()?;
-
-    // If the command failed *in a controlled manner*,
-    if !result.status.success() {
-        std::process::exit(result.status.code().unwrap());
-    }
-
-    // Parse result
-    serde_json::from_str(&String::from_utf8_lossy(&result.stdout))
-        .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
+    nix::evaluate(&NIX_EXPR_PROCESS_CHUNK.to_string(), arguments, options)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nix::cli::NixCliExpressionArguments;
+    use nix::cli::NixInstantiateOptions;
     use std::fs;
 
     #[test]
@@ -207,31 +201,32 @@ mod tests {
         let chunk = vec![vec!["a"], vec!["b"], vec!["c", "d"]];
         fs::write(path, serde_json::to_string_pretty(&chunk).unwrap())
             .expect("Error while writing attributes to file...");
-        let args = vec![
-            "--show-trace",
-            "--arg",
-            "filter",
-            "v: true",
-            "--arg",
-            "attrs",
-            r#"
-                let
-                    mkDrv =
-                        name:
-                        derivation {
-                            inherit name;
-                            builder = "bogus";
-                            system = "bogus";
-                        }
-                    ;
-                in
-                { a = mkDrv "1"; b = mkDrv "2"; c = { d = mkDrv "4"; }; }
-            "#,
-        ]
-        .into_iter()
-        .map(|s| s.to_string())
-        .collect();
-        let result = evaluate_chunk(&args, path).unwrap();
+
+        const NO_FILTER: &str = "v: true";
+        const EXPR: &str = r#"
+              let
+                  mkDrv =
+                      name:
+                      derivation {
+                          inherit name;
+                          builder = "bogus";
+                          system = "bogus";
+                      }
+                  ;
+              in
+              { a = mkDrv "1"; b = mkDrv "2"; c = { d = mkDrv "4"; }; }
+          "#;
+
+        let options = NixInstantiateOptions {
+            show_trace: Some(true),
+            ..NixInstantiateOptions::default()
+        };
+
+        let mut expression_arguments = NixCliExpressionArguments::new();
+        expression_arguments.insert("filter".to_string(), NO_FILTER.to_string());
+        expression_arguments.insert("attrs".to_string(), EXPR.to_string());
+
+        let result = evaluate_chunk(path, &expression_arguments, &options).unwrap();
 
         // FIXME: This is unlikely to be fun to work with.
         // TODO: evaluate_chunk should take an argument to transform values.
