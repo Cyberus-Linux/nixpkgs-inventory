@@ -112,7 +112,7 @@ fn main() -> Result<(), String> {
     let expression_input = if args.is_expression {
         NixCliExpression::Expression(args.file)
     } else {
-        NixCliExpression::Path(args.file)
+        NixCliExpression::Path(Some(nix::resolve_path(args.file)))
     };
 
     // Prepare expression arguments from CLI.
@@ -287,10 +287,7 @@ fn main() -> Result<(), String> {
 
     result.evaluation_arguments = Some(expression_arguments);
 
-    result.evaluation_input = match expression_input {
-        NixCliExpression::Path(v) => Some(NixCliExpression::Path(Some(nix::resolve_path(v)))),
-        v => Some(v),
-    };
+    result.evaluation_input = Some(expression_input);
 
     serde_json::to_writer_pretty(io, &result).expect("Error while writing results...");
 
