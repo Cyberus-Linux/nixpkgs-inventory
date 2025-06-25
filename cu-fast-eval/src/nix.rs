@@ -1,7 +1,11 @@
 use std::path::PathBuf;
 
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+
 use cu_lib_nix::nix;
 use nix::cli::{NixCliExpression, NixCliExpressionArguments};
+use nix::AttributePath;
 use nix::AttributePaths;
 
 const NIX_EXPR_CLI_IMPORT: &str = include_str!("nix/cli-import.nix");
@@ -94,12 +98,20 @@ pub fn get_attributes(
     )
 }
 
-/// Returns the serde_json Array of serde_json Objects for the evaluated list of Nix attribute sets.
-pub fn evaluate_chunk(
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AttributeResult<T> {
+    #[serde(rename = "attrPath")]
+    pub attr_path: AttributePath,
+    pub success: bool,
+    pub value: T,
+}
+
+/// Returns the `Vec<AttributeResult<T>>` of values for the Nix attribute set chunk.
+pub fn evaluate_chunk<T: DeserializeOwned>(
     path: &str,
     expression_arguments: &nix::cli::NixCliExpressionArguments,
     options: &nix::cli::NixInstantiateOptions,
-) -> Result<serde_json::Value, String> {
+) -> Result<Vec<AttributeResult<T>>, String> {
     let mut arguments = expression_arguments.clone();
     arguments.insert("chunkPath".to_string(), path.to_string());
 
@@ -203,14 +215,18 @@ mod tests {
         expression_arguments.insert("filter".to_string(), ALWAYS.to_string());
         expression_arguments.insert("attrs".to_string(), EXPR.to_string());
 
-        let result = evaluate_chunk(path, &expression_arguments, &options).unwrap();
+        let result: Vec<serde_json::Value> = evaluate_chunk(path, &expression_arguments, &options)
+            .unwrap()
+            .into_iter()
+            .map(|r| r.value)
+            .collect();
 
         // FIXME: This is unlikely to be fun to work with.
         // TODO: evaluate_chunk should take an argument to transform values.
         // We will then return simpler values than full-blown derivations.
         // We can then move the "hard" Nix logic regarding evaluating the derivations outside of evaluate_chunk.
         assert_eq!(
-            result.to_string(),
+            serde_json::to_string(&result).unwrap(),
             "[{\"attrPath\":[\"a\"],\"drvPath\":\"/nix/store/5nvz1xv9gfmw01gf6hjzylffa2d7291m-1.drv\",\"meta\":null,\"name\":\"1\",\"outputs\":{\"out\":\"/nix/store/fpdknchlh3hdwrgd3xfm3ficb25f8081-1\"},\"patches\":[],\"pname\":null,\"srcs\":[],\"version\":null},{\"attrPath\":[\"b\"],\"drvPath\":\"/nix/store/5f6qc7qz5i4gcvifhkl0fiwy7jzi5f5v-2.drv\",\"meta\":null,\"name\":\"2\",\"outputs\":{\"out\":\"/nix/store/dwh9k5gaxxg2fwa1i0190nzykfmkwycq-2\"},\"patches\":[],\"pname\":null,\"srcs\":[],\"version\":null},{\"attrPath\":[\"c\",\"d\"],\"drvPath\":\"/nix/store/0g2qnbsfz15lhdcrw3acj4c77sd3qhk3-4.drv\",\"meta\":null,\"name\":\"4\",\"outputs\":{\"out\":\"/nix/store/gw834zp0bifxd7n4v9m7pn0kd3wjyypd-4\"},\"patches\":[],\"pname\":null,\"srcs\":[],\"version\":null}]"
         );
     }
