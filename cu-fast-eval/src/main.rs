@@ -5,7 +5,7 @@ use cu_fast_eval::evaluation;
 use cu_fast_eval::get_env_int;
 use cu_fast_eval::nix;
 use cu_fast_eval::nix::{build_nix_cli_import_semantics_fragment, evaluate_chunk, get_attributes};
-use cu_lib_nix::cli::{NixCliExpression, NixCliExpressionArguments};
+use cu_lib_nix::nix::cli::{NixCliExpression, NixCliExpressionArguments};
 use cu_lib_nix::nix::AttributePaths;
 
 use clap::Parser;

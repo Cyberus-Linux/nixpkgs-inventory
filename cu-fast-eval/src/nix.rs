@@ -2,8 +2,8 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::process::Stdio;
 
-use cu_lib_nix::cli::{NixCliExpression, NixCliExpressionArguments};
 use cu_lib_nix::log_command;
+use cu_lib_nix::nix::cli::{NixCliExpression, NixCliExpressionArguments};
 use cu_lib_nix::nix::AttributePaths;
 
 // Allow hardcoding a specific `nix-instantiate` at build-time, obviating the need for a wrapper.

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-use cu_lib_nix::cli::{NixCliExpression, NixCliExpressionArguments};
 use cu_lib_nix::nix;
+use nix::cli::{NixCliExpression, NixCliExpressionArguments};
 
 #[derive(Serialize, Deserialize, Debug)]
 /// Results of an evaluation from cu-fast-eval.
