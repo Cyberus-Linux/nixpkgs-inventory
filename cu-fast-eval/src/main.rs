@@ -231,28 +231,22 @@ fn main() -> Result<(), String> {
             // In that case, this could take longer than evaluating the attribute set in a serial
             // manner. Though this shouldn't happen.
             //
-            let data = evaluate_chunk(chunk_path, &expression_arguments, &instantiate_options)
-                .unwrap_or_else(|_| panic!("Unexpected error while handling chunk {}", chunk_path))
-                .as_array()
-                .unwrap_or_else(|| panic!("Unexpected error while handling chunk {}", chunk_path))
-                .to_vec();
+            let data = evaluate_chunk::<serde_json::Value>(
+                chunk_path,
+                &expression_arguments,
+                &instantiate_options,
+            )
+            .unwrap_or_else(|_| panic!("Unexpected error while handling chunk {}", chunk_path));
 
             let file = fs::File::open(chunk_path)
                 .expect("Unexpected error while opening JSON chunk information...");
+
             let chunk_attributes: AttributePaths = serde_json::from_reader(file)
                 .expect("Unexpected error while parsing JSON chunk information...");
 
             let good_attributes = data
                 .iter()
-                .map(|entry| {
-                    serde_json::from_value(
-                        entry
-                            .get("attrPath")
-                            .expect("Expecting key `attrPath` on evaluation results attribute set.")
-                            .clone(),
-                    )
-                    .unwrap()
-                })
+                .map(|entry| entry.attr_path.clone())
                 .collect::<AttributePaths>()
                 .to_vec();
 
@@ -262,17 +256,27 @@ fn main() -> Result<(), String> {
                 .collect::<AttributePaths>()
                 .to_vec();
 
-            let mut chunk_results = evaluation::Results::new();
-            chunk_results.attributes_with_errors = attributes_with_errors;
-            chunk_results.data = data;
-            chunk_results
+            evaluation::Results {
+                evaluation_arguments: None,
+                evaluation_input: None,
+                attributes_with_errors,
+                data,
+            }
         })
-        .reduce(evaluation::Results::new, |mut acc, mut curr| {
-            acc.attributes_with_errors
-                .append(&mut curr.attributes_with_errors);
-            acc.data.append(&mut curr.data);
-            acc
-        });
+        .reduce(
+            || evaluation::Results {
+                evaluation_arguments: None,
+                evaluation_input: None,
+                attributes_with_errors: vec![],
+                data: vec![],
+            },
+            |mut acc, mut curr| {
+                acc.attributes_with_errors
+                    .append(&mut curr.attributes_with_errors);
+                acc.data.append(&mut curr.data);
+                acc
+            },
+        );
 
     eprintln!("\n:: Writing output...\n");
 
