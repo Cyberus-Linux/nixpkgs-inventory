@@ -28,7 +28,7 @@ pub enum NixCliExpression {
 /// See `merge` for composing different NixInstantiateOptions.
 ///
 /// The Default values are intended to merge properly and not overwrite unset (`None`) values.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct NixInstantiateOptions {
     /// `--expr` or `-E`
     pub expression: Option<bool>,
@@ -42,6 +42,8 @@ pub struct NixInstantiateOptions {
     pub read_write_mode: Option<bool>,
     /// `--readonly-mode`
     pub readonly_mode: Option<bool>,
+    /// `--show-trace`
+    pub show_trace: Option<bool>,
 }
 
 impl NixInstantiateOptions {
@@ -54,6 +56,7 @@ impl NixInstantiateOptions {
             eval: other.eval.or(self.eval),
             read_write_mode: other.read_write_mode.or(self.read_write_mode),
             readonly_mode: other.readonly_mode.or(self.readonly_mode),
+            show_trace: other.show_trace.or(self.show_trace),
         }
     }
 }
@@ -79,6 +82,9 @@ impl NixInstantiateOptions {
         }
         if self.readonly_mode.unwrap_or(false) {
             arguments.push("--readonly-mode".to_string());
+        }
+        if self.show_trace.unwrap_or(false) {
+            arguments.push("--show-trace".to_string());
         }
 
         arguments
