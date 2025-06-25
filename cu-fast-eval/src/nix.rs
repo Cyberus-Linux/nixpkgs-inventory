@@ -3,14 +3,10 @@ use std::process::Command;
 use std::process::Stdio;
 
 use cu_lib_nix::log_command;
-use cu_lib_nix::nix::cli::{NixCliExpression, NixCliExpressionArguments};
-use cu_lib_nix::nix::AttributePaths;
-
-// Allow hardcoding a specific `nix-instantiate` at build-time, obviating the need for a wrapper.
-pub const COMMAND_NIX_INSTANTIATE: &str = match option_env!("COMMAND_NIX_INSTANTIATE") {
-    Some(v) => v,
-    None => "nix-instantiate",
-};
+use cu_lib_nix::nix;
+use nix::cli::{NixCliExpression, NixCliExpressionArguments};
+use nix::AttributePaths;
+use nix::COMMAND_NIX_INSTANTIATE;
 
 const NIX_EXPR_CLI_IMPORT: &str = include_str!("nix/cli-import.nix");
 const NIX_EXPR_DUMP_ATTRIBUTES: &str = include_str!("nix/dump-attributes.nix");
