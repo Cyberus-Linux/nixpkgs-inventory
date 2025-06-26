@@ -109,11 +109,19 @@ pub fn get_attributes(
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct AttributeResult<T> {
+struct AttributeResult<T> {
     #[serde(rename = "attrPath")]
     pub attr_path: AttributePath,
     pub success: bool,
-    pub value: T,
+    pub value: MaybeAttributeResult<T>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(untagged)]
+/// Used to allow deserializing `T` when there was a failure.
+enum MaybeAttributeResult<T> {
+    Success(T),
+    Failure(bool),
 }
 
 /// Returns the `Vec<AttributeResult<T>>` of values for the Nix attribute set chunk.
@@ -146,7 +154,15 @@ pub fn evaluate_chunk<T: DeserializeOwned>(
         .into_iter()
         .filter_map(|result| {
             if result.success {
-                Some(result.value)
+                match result.value {
+                    MaybeAttributeResult::Success(value) => Some(value),
+                    _ => {
+                        panic!(
+                            "Unexpectedly found something else than `T` for {}",
+                            serde_json::to_string(&result.attr_path).unwrap()
+                        );
+                    }
+                }
             } else {
                 None
             }
