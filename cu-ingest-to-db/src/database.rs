@@ -105,6 +105,22 @@ impl AttributesDatabase {
         })
     }
 
+    pub fn query_map<T, P: rusqlite::Params, F: FnMut(&rusqlite::Row<'_>) -> Result<T>>(
+        &self,
+        sql: &str,
+        params: P,
+        f: F,
+    ) -> Result<Vec<T>> {
+        Ok(self
+            .connection
+            .lock()
+            .unwrap()
+            .prepare(sql)?
+            .query_map(params, f)?
+            .map(|r| r.unwrap())
+            .collect())
+    }
+
     pub fn query_one<T, P: rusqlite::Params, F: FnOnce(&rusqlite::Row<'_>) -> Result<T>>(
         &self,
         sql: &str,
