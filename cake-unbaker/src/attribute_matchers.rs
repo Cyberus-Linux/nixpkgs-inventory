@@ -1,7 +1,6 @@
 use cu_ingest_to_db::database as db;
 use cu_lib_nix::nix;
 use nix::AttributePath;
-use nix::AttributePaths;
 use nix::StorePath;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -148,15 +147,22 @@ pub fn extract_derivations(
 /// Picks the attribute path that is shallower (i.e. a over a.a), then the shorter joined
 /// string, and then lexicographically ordered first.
 pub fn likeliest_attribute_path(a: &AttributePath, b: &AttributePath) -> Ordering {
+    // Same depth?
     if a.len() == b.len() {
+        // Compare name length
         let a = a.join(".");
         let b = b.join(".");
+
+        // Same name length?
         if a.len() == b.len() {
+            // Lexicographically compare
             a.cmp(&b)
         } else {
+            // Prefer shortest name length
             a.len().cmp(&b.len())
         }
     } else {
+        // Prefer shallowest depth
         a.len().cmp(&b.len())
     }
 }
@@ -171,11 +177,11 @@ impl Matcher {
 
     /// Given a single store path, finds the likeliest attribute path to reach it.
     pub fn find_from_path(&self, path: &StorePath) -> Option<AttributePath> {
-        let mut results: AttributePaths = self
+        let mut results: Vec<(AttributePath, Option<String>)> = self
             .database
             .query_map(
                 r#"
-                SELECT attribute_path
+                SELECT attribute_path, pname
                     FROM evaluation_attributes
                     WHERE derivation_path = (:derivation_path)
                 ;
@@ -184,8 +190,8 @@ impl Matcher {
                     ":derivation_path": &path,
                 },
                 |row| {
-                    let json: String = row.get(0).unwrap();
-                    Ok(serde_json::from_str(&json).unwrap())
+                    let json: String = row.get(0)?;
+                    Ok((serde_json::from_str(&json).unwrap(), row.get(1)?))
                 },
             )
             .expect("Unexpectedly failed while getting attribute paths");
@@ -195,10 +201,37 @@ impl Matcher {
         }
 
         // Apply heuristics...
-        results.sort_by(likeliest_attribute_path);
+        results.sort_by(|(a, a_pname), (b, b_pname)| {
+            let a_parent_path = a.clone()[0..a.len() - 1].join(".");
+            let b_parent_path = b.clone()[0..b.len() - 1].join(".");
+
+            // When at the same depth, and the parent path is equal in length.
+            if a.len() == b.len() && a_parent_path.len() == b_parent_path.len() {
+                // Same pname on either?
+                let same_pname = a_pname.is_some() && b_pname.is_some() && a_pname == b_pname;
+                // They both match the attribute name?
+                let both_match = a_pname.as_ref() == a.last() && b_pname.as_ref() == b.last();
+
+                if !(same_pname && both_match) {
+                    // Prefer `a` if its pname matches the attribute name.
+                    if a_pname.is_some() && a_pname.as_ref() == a.last() {
+                        return Ordering::Less;
+                    }
+                    // Prefer `b` if its pname matches the attribute name.
+                    if b_pname.is_some() && b_pname.as_ref() == b.last() {
+                        return Ordering::Greater;
+                    }
+                }
+                // Fall through if they both match the attribute name.
+                // (e.g. `xyz.abc` and `qwe.abc` for `pname == "abc"`)
+            }
+
+            likeliest_attribute_path(a, b)
+        });
+        let (attribute_path, _pname) = results[0].clone();
 
         // Then return the first element.
-        Some(results[0].clone())
+        Some(attribute_path)
     }
 
     /// Returns mapping of store paths to attribute paths.
