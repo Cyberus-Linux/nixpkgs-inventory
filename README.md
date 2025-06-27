@@ -13,6 +13,12 @@ Additional accessory features exposed:
  - *Correctly* importing source references to the store with a normalized CLI. (`cake-unbaker pkgs store-path`)
 
 
+Contents
+--------
+
+[[_TOC_]]
+
+
 Components
 ----------
 
