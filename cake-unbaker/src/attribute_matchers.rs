@@ -8,8 +8,108 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::io::BufRead;
 
+/// Store some helpers and structs for the sbomnix input format.
+pub mod sbomnix {
+    pub mod cdx {
+        use cu_lib_nix::nix;
+        use nix::StorePath;
+        use serde::de;
+        use serde::{Deserialize, Serialize};
+
+        /// Validates the json document is CDX.
+        fn assert_bom_format<'de, D: de::Deserializer<'de>>(
+            deserializer: D,
+        ) -> Result<String, D::Error> {
+            let value = <String>::deserialize(deserializer);
+            if value.is_ok() {
+                let value = value.unwrap();
+                if value == "CycloneDX" {
+                    Ok(value)
+                } else {
+                    Err(de::Error::custom(format_args!(
+                        "Format '{value}' invalid for an sbomnix CDX document."
+                    )))
+                }
+            } else {
+                value.map_err(de::Error::custom)
+            }
+        }
+
+        #[derive(Serialize, Deserialize, Clone, Debug)]
+        pub struct Document {
+            #[serde(rename = "bomFormat")]
+            #[serde(deserialize_with = "assert_bom_format")]
+            pub bom_format: String,
+            #[serde(rename = "specVersion")]
+            pub spec_version: String,
+            pub version: u32,
+            #[serde(rename = "serialNumber")]
+            pub serial_number: String,
+            pub metadata: Metadata,
+            pub components: Components,
+            pub dependencies: Dependencies,
+        }
+
+        impl Document {
+            pub fn get_component(&self, bom_ref: &BomRef) -> Option<&Component> {
+                self.components
+                    .iter()
+                    .find(|component| &component.bom_ref == bom_ref)
+            }
+        }
+
+        /// For an sbomnix, the BOM refs always are a Nix store path.
+        pub type BomRef = StorePath;
+
+        #[derive(Serialize, Deserialize, Clone, Debug)]
+        // NOTE: currently incomplete, and only goes as far as needed.
+        pub struct Metadata {
+            // TODO: validate `metadata.tools` contains `sbomnix`.
+            pub tools: Vec<serde_json::Value>,
+            pub component: Component,
+        }
+
+        pub type Components = Vec<Component>;
+
+        #[derive(Serialize, Deserialize, Clone, Debug)]
+        // NOTE: currently incomplete, and only goes as far as needed.
+        pub struct Component {
+            #[serde(rename = "type")]
+            // NOTE: sbomnix only outputs `library` types.
+            pub component_type: String,
+            #[serde(rename = "bom-ref")]
+            pub bom_ref: BomRef,
+            pub properties: ComponentProperties,
+            pub purl: String,
+            pub cpe: String,
+        }
+
+        #[derive(Serialize, Deserialize, Clone, Debug)]
+        pub struct ComponentProperties(Vec<ComponentProperty>);
+
+        #[derive(Serialize, Deserialize, Clone, Debug)]
+        pub struct ComponentProperty {
+            name: String,
+            value: String,
+        }
+
+        #[derive(Serialize, Deserialize, Clone, Debug)]
+        pub struct Dependencies(Vec<Dependency>);
+
+        #[derive(Serialize, Deserialize, Clone, Debug)]
+        pub struct Dependency {
+            #[serde(rename = "ref")]
+            pub bom_ref: BomRef,
+            #[serde(rename = "dependsOn")]
+            pub depends_on: Option<Vec<String>>,
+        }
+    }
+}
+
 #[derive(Debug, Clone, clap::ValueEnum)]
 pub enum InputFormats {
+    /// The `cdx.json` output from sbomnix.
+    Sbomnix,
     /// The output of `nix-store --requisites`.
     Requisites,
 }
@@ -18,12 +118,30 @@ pub struct Matcher {
     database: db::AttributesDatabase,
 }
 
+/// Extracts format-specific derivation information from the input file. This may not include the
+/// full requisites. It may also be missing the build-time inputs.
 pub fn extract_derivations(
     input_format: &InputFormats,
     input_data: impl BufRead,
 ) -> BTreeSet<StorePath> {
     match input_format {
         InputFormats::Requisites => input_data.lines().map(|l| l.unwrap()).collect(),
+        InputFormats::Sbomnix => {
+            let mut ret = BTreeSet::new();
+
+            let sbom: sbomnix::cdx::Document =
+                serde_json::from_reader(input_data).expect("Parsing sbomnix cdx document failed");
+
+            // We can crawl just the `components[][bom-ref]` to get the input drvs.
+            // This can be compared against this barbaric `grep`.
+            //   $ grep '\.drv' sbom.cdx.json | sed -e 's/.*://' -e 's/^ *"//' -e 's/",\?$//' | sort -u
+            // Which should output the same list.
+            for component in sbom.components {
+                ret.insert(component.bom_ref);
+            }
+
+            ret
+        }
     }
 }
 
