@@ -21,7 +21,9 @@ fn main() {
         // NOTE: `serde_json::from_reader(fs::File::open(...))` is a lot slower than expected...
         let s = fs::read_to_string(&path).unwrap();
         let results = serde_json::from_str(&s).unwrap();
-        new_drvs.append(&mut cu_ingest_to_db::ingest_evaluation(&conn, results, &path));
+        new_drvs.append(&mut cu_ingest_to_db::ingest_evaluation(
+            &conn, results, &path,
+        ));
     }
 
     eprintln!("\n\n:: Resolving derivation references...\n");

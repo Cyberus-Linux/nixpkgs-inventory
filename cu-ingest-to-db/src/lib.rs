@@ -82,7 +82,11 @@ pub mod derivation {
 /// references data.
 ///
 /// Run `resolve_derivation_references` on the returned value after ingesting.
-pub fn ingest_evaluation(conn: &database::AttributesDatabase, results: evaluation::Results<derivation::Info>, id: &String) -> Vec<nix::StorePath> {
+pub fn ingest_evaluation(
+    conn: &database::AttributesDatabase,
+    results: evaluation::Results<derivation::Info>,
+    id: &String,
+) -> Vec<nix::StorePath> {
     let mut drvs_without_references_data = Vec::new();
 
     let exists = 0
