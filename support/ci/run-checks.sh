@@ -1,4 +1,6 @@
-#!/usr/bin/env bash
+#!/usr/bin/env nix-shell
+#! nix-shell ../../shell.nix
+#! nix-shell -i bash
 
 #
 # This script is the entrypoint to run the checks on CI.
