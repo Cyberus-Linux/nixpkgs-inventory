@@ -19,6 +19,110 @@ Contents
 [[_TOC_]]
 
 
+Quick Start
+-----------
+
+You will need to know which Nixpkgs revisions were used with the inputs you want to “unbake”.
+
+> [!TIP]
+> A NixOS toplevel output path may include the necessary information!
+>
+> ```
+> /nix/store/[...]eee-nixos-system-$USER-$HOST-kernel_$KERNEL_VERSION-25.11pre999999.30a61f056ac4
+>                                                                                    ^^^^^^^^^^^^
+> ```
+
+### Example
+
+This example:
+
+ - Gets a specific Nixpkgs checkout
+ - Indexes the packages
+ - Creates a sample “project”
+ - Lists attribute sets from the requisites
+
+<details>
+<summary>Example console transcript</summary>
+
+```
+ # This first step left as an exercise to the reader
+ $ cd "${cake_unbaker_checkout}"
+
+ # The shell is the development shell, but also allows using the tools directly.
+ $ nix-shell
+
+ # Get a Nixpkgs checkout, `--depth=1` used to reduce the download size
+ $ git clone --depth=1 \
+    --revision=30a61f056ac492e3b7cdcb69c1e6abdcf00e39cf \
+    https://github.com/NixOS/nixpkgs \
+    arbitrary-nixpkgs
+
+ # Index the package set
+ $ cake-unbaker pkgs index nixpkgs-30a61f056ac4.sqlite arbitrary-nixpkgs
+:: Normalizing references...
+   SourceReference(path, arbitrary-nixpkgs)
+fetching git input 'git+file:///.../cake-unbaker/arbitrary-nixpkgs'
+   Normalized to: /nix/store/1l4nm55xcq55cdp1xz3x5mfgr4c24058-source
+
+:: Evaluating references...
+    → Evaluating /nix/store/1l4nm55xcq55cdp1xz3x5mfgr4c24058-source...
+[...]
+>> Ingesting "zziplib"
+++ drv: /nix/store/801grh56fjdk3c9fjn0nsfc71y5r5ghb-zziplib-0.13.79.drv
+   out: /nix/store/prv453cs1ihkg1kyh1wc0bnifaa00i00-zziplib-0.13.79
+   src: /nix/store/4m3j3lp4riivwqca4wy9jm1307wvgkqc-source
+>> Ingesting "zzuf"
+++ drv: /nix/store/63qxpzcfxwcbyqss7c2jkhzg0y4k7w0x-zzuf-0.15.drv
+   out: /nix/store/vff9abqk235bg2d8s049ddvcv41zfm1l-zzuf-0.15
+   src: /nix/store/aq4bnwryp7mqvffdhy7wf0pwfssgcpdb-source
+   patch: /nix/store/jwmjycxaj2qdzg790v8qz8ybla05jins-zzuf-zzat-c99.patch
+   patch: /nix/store/b3wnc4cm6p7j8kh81vr7wslc6rw43d59-zzuf-glibc.patch
+
+ # Make a silly sample project
+ $ cat > weird-hello.nix <<'EOF'
+{ pkgs }:
+
+pkgs.writeShellScript "weird-hello" ''
+  set -x
+  ${pkgs.hello}/bin/hello
+  ${pkgs.hello-cpp}/bin/hello-cpp
+  ${pkgs.hello-go}/bin/hello-go
+''
+EOF
+
+ # Build this weird hello project
+ $ nix-build --arg pkgs 'import ./arbitrary-nixpkgs {}' ./weird-hello.nix 
+this derivation will be built:
+  /nix/store/kal22dvdm1zn45gqk2ix25mnsljzrpa7-weird-hello.drv
+these 3 paths will be fetched (0.57 MiB download, 1.75 MiB unpacked):
+  /nix/store/1apy255z15pclskgkzsbzldgdn87zbyr-hello-2.12.2
+  /nix/store/fxn18i7202bv9bh1x1yqrygahbc826xy-hello-cpp
+  /nix/store/bcgch2rnw38mkma8lg1wgmadad4pyl7y-hello-go
+copying path '/nix/store/bcgch2rnw38mkma8lg1wgmadad4pyl7y-hello-go' from 'https://cache.nixos.org'...
+copying path '/nix/store/1apy255z15pclskgkzsbzldgdn87zbyr-hello-2.12.2' from 'https://cache.nixos.org'...
+copying path '/nix/store/fxn18i7202bv9bh1x1yqrygahbc826xy-hello-cpp' from 'https://cache.nixos.org'...
+building '/nix/store/nd4bzg9dp4kc7yqdkk1k4wghjhss2v1l-weird-hello.drv'...
+/nix/store/rk46z5ix6h25vddx46k6i7xdzaraigxy-weird-hello
+
+ # Get the derivation's requisites for the project
+ $ nix-store --query \
+    --requisites /nix/store/kal22dvdm1zn45gqk2ix25mnsljzrpa7-weird-hello.drv > weird-hello.requisites.txt
+
+ # Extract back *all* the attribute paths involved
+ $ cake-unbaker get-attributes \
+    --input-format requisites \
+    --output-format only-attribute-paths \
+    nixpkgs-30a61f056ac4.sqlite \
+    weird-hello.requisites.txt \
+    > attributes.json
+
+ # It's a long list...
+ $ jq '. | length' < attributes.json
+222
+```
+</details>
+
+
 Components
 ----------
 
