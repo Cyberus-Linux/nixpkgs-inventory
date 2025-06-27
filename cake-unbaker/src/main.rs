@@ -1,5 +1,11 @@
+use std::collections::BTreeSet;
+use std::fs::File;
+use std::io::BufReader;
+
+use cake_unbaker::attribute_matchers;
 use cu_ingest_to_db::database;
 use cu_lib_nix::nix;
+use nix::AttributePath;
 
 use clap::{Parser, Subcommand};
 
@@ -25,6 +31,47 @@ enum Commands {
         #[command(subcommand)]
         command: PkgsCommands,
     },
+    /// From different input formats, list the attributes used from a package set.
+    ///
+    /// The database used to list the attributes comes from the `pkgs index` command.
+    ///
+    /// The attributes chosen in the list may not be the exact attributes used in the input,
+    /// but maps to the same derivation. The discrepancy is due to how multiple attributes may
+    /// point to the same derivation. The instantiation is lossy since it only works with
+    /// derivations, and does not know how the derivation was selected.
+    ///
+    /// The heuristics prefer shorter attribute names that are closer to the root.
+    /// Since the `pkgs index` command works with `{ allowAliases = false }`, aliases should not be
+    /// present.
+    ///
+    /// If the database houses indices for many evaluations, attribute names should still match
+    /// properly, but a package that was aliased and its attribute renamed may map to the older
+    /// name, depending on the timeline and luck.
+    GetAttributes(GetAttributes),
+}
+
+#[derive(Debug, Clone, clap::ValueEnum)]
+enum AttributesOutputFormats {
+    /// Unstable JSON representation of the attributes matcher data.
+    ///
+    /// The contents will evolve with time. Prefer another stable format for scripting and
+    /// automations.
+    Raw,
+    /// JSON-formatted array of attribute path arrays.
+    OnlyAttributePaths,
+}
+
+#[derive(Parser, Debug, Clone)]
+struct GetAttributes {
+    #[arg(long)]
+    input_format: attribute_matchers::InputFormats,
+    #[arg(long)]
+    output_format: AttributesOutputFormats,
+    /// Path to the packages index database.
+    database: String,
+    #[structopt(required = true)]
+    /// Inputs from which to list the attributes of.
+    inputs: Vec<String>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -172,6 +219,43 @@ fn main() -> Result<(), String> {
                     .expect("Unexpected error while adding to store...");
             }
         },
+        Commands::GetAttributes(subcommand_args) => {
+            let matcher = attribute_matchers::Matcher::with_database(&subcommand_args.database);
+
+            let paths = subcommand_args
+                .inputs
+                .iter()
+                .map(|input| {
+                    let file = File::open(input)
+                        .unwrap_or_else(|_| panic!("Could not open input {}", input));
+                    let reader = BufReader::new(file);
+
+                    attribute_matchers::extract_derivations(&subcommand_args.input_format, reader)
+                })
+                .reduce(|mut a, mut b| {
+                    a.append(&mut b);
+                    a
+                })
+                .expect("No input produced from inputs?");
+
+            let results = matcher.find_from_paths(paths.iter());
+
+            match subcommand_args.output_format {
+                AttributesOutputFormats::Raw => {
+                    serde_json::to_writer_pretty(output, &results)
+                        .expect("Unexpected error while producing raw output");
+                }
+                AttributesOutputFormats::OnlyAttributePaths => {
+                    let results: BTreeSet<AttributePath> = results
+                        .into_values()
+                        .flatten()
+                        .collect();
+                    serde_json::to_writer_pretty(output, &results).expect(
+                        "Unexpected error while producing attribute paths listing output",
+                    );
+                }
+            };
+        }
     };
 
     Ok(())
