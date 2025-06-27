@@ -6,6 +6,13 @@
 Components
 ----------
 
+
+### Additional plumbing
+
+Some of the plumbing used in `cake-unbaker` can be accessed using their commands.
+
+Generally, these commands would be first used within a quick proof-of-concept to evaluate the feasibility of an idea, or to benefit from the `cake-unbaker` inside external non-Rust tooling.
+
 ### `cu-fast-eval`
 
 The `cu-fast-eval` tool is used to quickly evaluate a Nixpkgs-like attribute set for derivations,
@@ -21,6 +28,99 @@ Example use:
 ```
 
 > *This command follows the conventions of the standard `nix-*` CLI regarding the input expression*
+
+<details>
+<summary>Help text</summary>
+
+<!-- [COMMAND_HELP:cu-fast-eval] -->
+
+```
+Usage: cu-fast-eval [OPTIONS] [FILE]
+
+Arguments:
+  [FILE]
+          Expression to evaluate, follows the standard Nix CLI semantics.
+
+           - When no file argument is given, defaults to `./default.nix`.
+           - When an angled-bracket argument is given, follows `NIX_PATH` resolution.
+           - When a relative path is given, relative to CWD.
+           - When an absolute path is given, used as-is.
+
+          The `--expr` argument changes the interpretation of `[FILE]`.
+
+           - The given string is used as a Nix expression to evaluated.
+
+Options:
+      --output <OUTPUT>
+          Filename to save the results. [default: <stdout>]
+
+      --cores <CORES>
+          Number of threads to use. [default: logical cpu count]
+
+      --max-chunk-size <MAX_CHUNK_SIZE>
+          Maximum size for a chunk
+
+          [default: 16000]
+
+      --recurse-with <RECURSE_WITH>
+          Nix expression to determine whether to recurse in an attrset or not.
+
+          The default follows the Nixpkgs conventions.
+
+          [default: "value: (value.recurseForDerivations or false) != false"]
+
+      --filter-with <FILTER_WITH>
+          Nix expression to determine whether to keep the value or not.
+
+          The default keeps only derivations.
+
+          [default: "value: builtins.isAttrs value && value ? drvPath"]
+
+  -E, --expr
+          Interpret [FILE] as an expression to evaluate
+
+      --arg <NAME> <VALUE>
+          Arguments passed directly to `nix-instantiate` as `--arg name value`
+
+      --show-trace
+          Whether to print a stack trace in case of Nix expression evaluation errors
+
+      --read-write-mode
+          Whether to perform evaluation in read/write mode
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+```
+
+<!-- [/COMMAND_HELP:cu-fast-eval] -->
+</details>
+
+
+### `cu-ingest-to-db`
+
+The `cu-ingest-to-db` tool is used to manually import the JSON output of evaluations from `cu-fast-eval` to a database.
+
+<details>
+<summary>Help text</summary>
+<!-- [COMMAND_HELP:cu-ingest-to-db] -->
+
+```
+Usage: cu-ingest-to-db <DATABASE> [JSON_PATHS]...
+
+Arguments:
+  <DATABASE>
+  [JSON_PATHS]...
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
+```
+
+<!-- [/COMMAND_HELP:cu-ingest-to-db] -->
+</details>
 
 
 Usage tips
