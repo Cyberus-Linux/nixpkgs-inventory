@@ -9,6 +9,8 @@ use clap::{Parser, Subcommand};
 struct Cli {
     #[command(subcommand)]
     command: Commands,
+    #[arg(long)]
+    output: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -74,13 +76,17 @@ enum PkgsCommands {
 
 fn main() -> Result<(), String> {
     let cli = Cli::parse();
+    let mut output: Box<dyn std::io::Write> = match cli.output {
+        Some(path) => Box::new(std::fs::File::create(&path).unwrap()),
+        None => Box::new(std::io::stdout()),
+    };
+
     match &cli.command {
         Commands::Derivation { command } => match command {
             DerivationCommands::References { path } => {
                 let result = nix::derivation_references(path)
                     .expect("Unexpected error while looking for derivation references...");
-                let io = std::io::stdout();
-                serde_json::to_writer_pretty(io, &result)
+                serde_json::to_writer_pretty(output, &result)
                     .expect("Unexpected error while converting to JSON...");
             }
         },
@@ -161,7 +167,9 @@ fn main() -> Result<(), String> {
                 }
             }
             PkgsCommands::StorePath { reference } => {
-                println!("{}", nix::normalized_add_to_store(reference)?)
+                output
+                    .write_fmt(format_args!("{}", nix::normalized_add_to_store(reference)?))
+                    .expect("Unexpected error while adding to store...");
             }
         },
     };
