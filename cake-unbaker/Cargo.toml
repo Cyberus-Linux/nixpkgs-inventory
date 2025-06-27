@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-clap = "4.5.39"
+clap = { version = "4.5.39", features = ["derive", "wrap_help"] }
 cu-fast-eval = { version = "0.1.0", path = "../cu-fast-eval" }
 cu-ingest-to-db = { version = "0.1.0", path = "../cu-ingest-to-db" }
 cu-lib-nix = { version = "0.1.0", path = "../cu-lib-nix" }
