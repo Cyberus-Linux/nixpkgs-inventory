@@ -1,10 +1,124 @@
 `cake-unbaker`
 ==============
 
-> *TODO* Write rationale and user-facing documentation.
+The `cake-unbaker` tool provides a few subcommands and plumbing commands to work with Nix-built projects.
+
+The main things `cake-unbaker` currently does:
+
+ - Index a package set's derivations. (`cake-unbaker pkgs index`)
+ - Map derivation paths back to package set attributes, from index. (`cake-unbaker get-attributes`)
+
+Additional accessory features exposed:
+
+ - *Correctly* importing source references to the store with a normalized CLI. (`cake-unbaker pkgs store-path`)
+
 
 Components
 ----------
+
+### `cake-unbaker`
+
+This is the main command of this tool.
+
+<!-- [COMMAND_HELP:cake-unbaker] -->
+
+```
+Usage: cake-unbaker [OPTIONS] <COMMAND>
+
+Commands:
+  derivation      Commands to inspect derivations
+  pkgs            Commands to inspect package sets
+  get-attributes  From different input formats, list the attributes used from a package set
+  help            Print this message or the help of the given subcommand(s)
+
+Options:
+      --output <OUTPUT>
+  -h, --help             Print help
+  -V, --version          Print version
+```
+
+<!-- [/COMMAND_HELP:cake-unbaker] -->
+
+
+### `cake-unbaker pkgs index`
+
+<!-- [COMMAND_HELP:cake-unbaker pkgs index] -->
+
+```
+Index a package set attributes and derivations
+
+Usage: cake-unbaker pkgs index <DATABASE> [REFERENCES]...
+
+Arguments:
+  <DATABASE>
+
+
+  [REFERENCES]...
+          Package sets, from references, to add to the database.
+
+          The package sets will have their paths normalized by adding them to the Nix store. See
+          `cake-unbaker pkgs store-path` for allowed reference types.
+
+Options:
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+```
+
+<!-- [/COMMAND_HELP:cake-unbaker pkgs index] -->
+
+
+### `cake-unbaker get-attributes`
+
+<!-- [COMMAND_HELP:cake-unbaker get-attributes] -->
+
+```
+From different input formats, list the attributes used from a package set.
+
+The database used to list the attributes comes from the `pkgs index` command.
+
+The attributes chosen in the list may not be the exact attributes used in the input, but maps to the
+same derivation. The discrepancy is due to how multiple attributes may point to the same derivation.
+The instantiation is lossy since it only works with derivations, and does not know how the
+derivation was selected.
+
+The heuristics prefer shorter attribute names that are closer to the root. Since the `pkgs index`
+command works with `{ allowAliases = false }`, aliases should not be present.
+
+If the database houses indices for many evaluations, attribute names should still match properly,
+but a package that was aliased and its attribute renamed may map to the older name, depending on the
+timeline and luck.
+
+Usage: cake-unbaker get-attributes --input-format <INPUT_FORMAT> --output-format <OUTPUT_FORMAT> <DATABASE> <INPUTS>...
+
+Arguments:
+  <DATABASE>
+          Path to the packages index database
+
+  <INPUTS>...
+          Inputs from which to list the attributes of
+
+Options:
+      --input-format <INPUT_FORMAT>
+          Possible values:
+          - sbomnix:    The `cdx.json` output from sbomnix
+          - requisites: The output of `nix-store --requisites`
+
+      --output-format <OUTPUT_FORMAT>
+          Possible values:
+          - raw:                  Unstable JSON representation of the attributes matcher data
+          - only-attribute-paths: JSON-formatted array of attribute path arrays
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+```
+
+<!-- [/COMMAND_HELP:cake-unbaker get-attributes] -->
 
 
 ### Additional plumbing
