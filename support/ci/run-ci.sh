@@ -8,6 +8,7 @@
 #
 
 set -euo pipefail
+PS4=" $ "
 
 this_script="${BASH_SOURCE[0]}"
 this_dir="$(readlink -f "${this_script%/*}")"
