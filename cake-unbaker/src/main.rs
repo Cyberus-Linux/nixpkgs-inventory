@@ -246,13 +246,14 @@ fn main() -> Result<(), String> {
                         .expect("Unexpected error while producing raw output");
                 }
                 AttributesOutputFormats::OnlyAttributePaths => {
-                    let results: BTreeSet<AttributePath> = results
-                        .into_values()
-                        .flatten()
-                        .collect();
-                    serde_json::to_writer_pretty(output, &results).expect(
-                        "Unexpected error while producing attribute paths listing output",
-                    );
+                    let results: BTreeSet<AttributePath> =
+                        results.into_values().flatten().collect();
+                    output
+                        .write_fmt(format_args!(
+                            "{}",
+                            cake_unbaker::to_attribute_paths_json(results.iter())
+                        ))
+                        .expect("Unexpected error while adding to store...");
                 }
             };
         }
