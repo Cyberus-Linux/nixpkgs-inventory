@@ -43,7 +43,10 @@ if reference_type == "url" then
   builtins.abort "TODO: URL support not implemented yet."
 else
   if builtins.pathExists ( reference_path + "/.git" ) then
-    builtins.fetchGit reference_path
+    builtins.fetchGit {
+      url = reference_path;
+      shallow = true;
+    }
   else
     builtins.path {
       name = "source";
