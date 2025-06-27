@@ -13,12 +13,12 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Commands to inspect derivations
+    /// Commands to inspect derivations.
     Derivation {
         #[command(subcommand)]
         command: DerivationCommands,
     },
-    /// Commands to inspect package sets
+    /// Commands to inspect package sets.
     Pkgs {
         #[command(subcommand)]
         command: PkgsCommands,
@@ -124,11 +124,23 @@ fn main() -> Result<(), String> {
                     let expression_input = nix::cli::NixCliExpression::Path(Some(path.clone()));
                     let expression_arguments = {
                         let mut args = nix::cli::NixCliExpressionArguments::new();
-                        args.insert("config".to_string(), "{ allowAliases = false; }".to_string());
-                        args.insert("currentSystem".to_string(), "builtins.currentSystem".to_string());
+                        args.insert(
+                            "config".to_string(),
+                            "{ allowAliases = false; allowUnfree = true; }".to_string(),
+                        );
+                        args.insert(
+                            "currentSystem".to_string(),
+                            "builtins.currentSystem".to_string(),
+                        );
                         // FIXME: internalize handling filter/recurse in chunked_eval
-                        args.insert("filter".to_string(), "value: builtins.isAttrs value && value ? drvPath".to_string());
-                        args.insert("recurse".to_string(), "value: (value.recurseForDerivations or false) != false".to_string());
+                        args.insert(
+                            "filter".to_string(),
+                            "value: builtins.isAttrs value && value ? drvPath".to_string(),
+                        );
+                        args.insert(
+                            "recurse".to_string(),
+                            "value: (value.recurseForDerivations or false) != false".to_string(),
+                        );
                         args
                     };
 
@@ -145,9 +157,7 @@ fn main() -> Result<(), String> {
                         &instantiate_options,
                     )?;
 
-                    new_drvs.append(&mut cu_ingest_to_db::ingest_evaluation(
-                        &db, results, &path,
-                    ));
+                    new_drvs.append(&mut cu_ingest_to_db::ingest_evaluation(&db, results, &path));
                 }
             }
             PkgsCommands::StorePath { reference } => {
