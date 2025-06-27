@@ -89,8 +89,8 @@ fn main() -> Result<(), String> {
                 database,
                 references,
             } => {
-                let db = database::open(&database)
-                    .expect("Unexpected error while opening the database.");
+                let db =
+                    database::open(database).expect("Unexpected error while opening the database.");
 
                 eprintln!(":: Normalizing references...");
                 let mut new_drvs = Vec::new();
