@@ -155,7 +155,7 @@ impl AttributesDatabase {
             from.table
                 .get_columns()
                 .iter()
-                .map(|s| format!(":{}", s))
+                .map(|s| format!(":{s}"))
                 .collect::<Vec<String>>()
                 .join(", "),
         );

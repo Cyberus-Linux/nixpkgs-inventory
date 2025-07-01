@@ -133,7 +133,7 @@ fn main() -> Result<(), String> {
     let expression_fragment =
         build_nix_cli_import_semantics_fragment(&expression_input, &expression_arguments)
             .unwrap_or_else(|msg| {
-                eprintln!("error: {}", msg);
+                eprintln!("error: {msg}");
                 std::process::exit(1);
             });
 

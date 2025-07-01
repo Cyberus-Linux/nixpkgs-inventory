@@ -57,7 +57,7 @@ impl fmt::Display for ReferenceType {
             ReferenceType::Path => "path",
             ReferenceType::Url => "url",
         };
-        write!(f, "{}", ret)
+        write!(f, "{ret}")
     }
 }
 
@@ -138,7 +138,7 @@ pub fn evaluate<T: DeserializeOwned>(
     // If the command failed.
     if !result.status.success() {
         let status = result.status.code().unwrap();
-        return Err(format!("nix-instantiate exited with status ({})", status));
+        return Err(format!("nix-instantiate exited with status ({status})"));
     }
 
     // Otherwise, deserialize into the generic type given.

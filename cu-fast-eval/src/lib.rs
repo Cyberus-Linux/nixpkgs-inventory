@@ -9,7 +9,7 @@ pub fn get_env_int(name: &str) -> Result<Option<usize>, String> {
             if !value.is_empty() {
                 match value.parse::<usize>() {
                     Ok(value) => Ok(Some(value)),
-                    Err(err) => Err(format!("{} needs to be an integer. ({})", name, err)),
+                    Err(err) => Err(format!("{name} needs to be an integer. ({err})")),
                 }
             } else {
                 Ok(None)
@@ -18,8 +18,7 @@ pub fn get_env_int(name: &str) -> Result<Option<usize>, String> {
         Err(err) => match err {
             env::VarError::NotPresent => Ok(None),
             _ => Err(format!(
-                "Unexpected error while handling {} environment variable. {}",
-                name, err
+                "Unexpected error while handling {name} environment variable. {err}"
             )),
         },
     }

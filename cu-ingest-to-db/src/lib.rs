@@ -152,7 +152,7 @@ pub fn ingest_evaluation(
 
             // Save output paths for a given drv.
             for (output, store_path) in &result.outputs {
-                eprintln!("   {}: {}", output, store_path);
+                eprintln!("   {output}: {store_path}");
                 conn.insert(
                     database::InsertQuery {
                         directive: database::InsertDirective::Insert,
@@ -173,7 +173,7 @@ pub fn ingest_evaluation(
             // Save inputs for a given drv.
             for (input_type, list) in [("src", &srcs), ("patch", &result.patches)] {
                 for store_path in list {
-                    eprintln!("   {}: {}", input_type, store_path);
+                    eprintln!("   {input_type}: {store_path}");
                     conn.insert(
                         database::InsertQuery {
                             directive: database::InsertDirective::Insert,
@@ -225,13 +225,13 @@ pub fn resolve_derivation_references(
     drvs: Vec<nix::StorePath>,
 ) {
     drvs.into_par_iter().for_each(|drv_path| {
-        eprintln!(" ⇒ {}", drv_path);
+        eprintln!(" ⇒ {drv_path}");
         let references = derivation_references(&drv_path).unwrap();
 
         // Get a lock on the actual db connection once the long-running command is done.
 
         for store_path in references.derivations {
-            eprintln!("        derivation: {}", store_path);
+            eprintln!("        derivation: {store_path}");
             conn.insert(
                 database::InsertQuery {
                     directive: database::InsertDirective::Insert,
@@ -249,7 +249,7 @@ pub fn resolve_derivation_references(
             .expect("Unable to execute insert for derivation input (derivation)");
         }
         for store_path in references.paths {
-            eprintln!("        path: {}", store_path);
+            eprintln!("        path: {store_path}");
             conn.insert(
                 database::InsertQuery {
                     directive: database::InsertDirective::Insert,
