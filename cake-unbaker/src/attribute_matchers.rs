@@ -79,8 +79,10 @@ pub mod sbomnix {
             #[serde(rename = "bom-ref")]
             pub bom_ref: BomRef,
             pub properties: ComponentProperties,
-            pub purl: String,
-            pub cpe: String,
+
+            // NOTE: Some entries don't have these.
+            pub purl: Option<String>,
+            pub cpe: Option<String>,
         }
 
         #[derive(Serialize, Deserialize, Clone, Debug)]
