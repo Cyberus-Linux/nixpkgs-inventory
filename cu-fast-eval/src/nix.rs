@@ -23,10 +23,7 @@ const NIX_EXPR_DUMP_ATTRIBUTES: &str = include_str!("nix/dump-attributes.nix");
 const NIX_EXPR_PROCESS_CHUNK: &str = include_str!("nix/process-chunk.nix");
 
 pub fn resolve_path(input_path: Option<String>) -> String {
-    let mut path = PathBuf::from(match input_path {
-        Some(path) => path,
-        None => "./default.nix".to_string(),
-    });
+    let mut path = PathBuf::from(input_path.unwrap_or_else(|| "./default.nix".to_string()));
 
     path = if path.is_absolute() {
         path
