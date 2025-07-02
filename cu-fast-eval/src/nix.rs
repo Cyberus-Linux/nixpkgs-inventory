@@ -23,10 +23,7 @@ const NIX_EXPR_DUMP_ATTRIBUTES: &str = include_str!("nix/dump-attributes.nix");
 const NIX_EXPR_PROCESS_CHUNK: &str = include_str!("nix/process-chunk.nix");
 
 pub fn resolve_path(input_path: Option<String>) -> String {
-    let mut path = PathBuf::from(match input_path {
-        Some(path) => path,
-        None => "./default.nix".to_string(),
-    });
+    let mut path = PathBuf::from(input_path.unwrap_or_else(|| "./default.nix".to_string()));
 
     path = if path.is_absolute() {
         path
@@ -53,7 +50,7 @@ pub fn build_nix_cli_import_semantics_fragment(
             .map(|(name, value)| format!("{0} = ({1});", serde_json::json!(&name), value))
             .collect::<Vec<String>>()
             .join("\n");
-        format!("{{\n{}\n}}", attrset_body)
+        format!("{{\n{attrset_body}\n}}")
     };
 
     // The expression the user wants to see evaluated.
@@ -85,14 +82,13 @@ pub fn build_nix_cli_import_semantics_fragment(
             // Paste given path with `${./.}/`, making an absolute path out of a relative one.
             // (Yes, the formatting string looks hard to parse, because we need to escape `${}`.)
             else {
-                format!(r#"./. + "/${{{0}}}""#, as_string)
+                format!(r#"./. + "/${{{as_string}}}""#)
             }
         }
     };
 
     Ok(format!(
-        "({0}) ({1}) ({2})",
-        NIX_EXPR_CLI_IMPORT, expression_input, expression_arguments
+        "({NIX_EXPR_CLI_IMPORT}) ({expression_input}) ({expression_arguments})"
     ))
 }
 
@@ -220,7 +216,7 @@ pub fn evaluate_chunked<T: DeserializeOwned + std::marker::Send>(
         .chunks(max_chunk_size)
         .enumerate()
         .map(|(i, chunk)| {
-            let path = workdir.path().join(format!("eval-chunk.{:08}.json", i));
+            let path = workdir.path().join(format!("eval-chunk.{i:08}.json"));
             fs::write(&path, serde_json::to_string_pretty(&chunk).unwrap())
                 .expect("Error while writing attributes to file...");
             path
@@ -229,10 +225,10 @@ pub fn evaluate_chunked<T: DeserializeOwned + std::marker::Send>(
 
     if verbose {
         eprintln!("\n");
-        eprintln!(":: Cores: {}", cores);
+        eprintln!(":: Cores: {cores}");
         eprintln!(":: Attributes count: {}", attributes.len());
-        eprintln!(":: Optimal chunk size: {}", optimal_chunk_size);
-        eprintln!(":: Current chunk size: {}", max_chunk_size);
+        eprintln!(":: Optimal chunk size: {optimal_chunk_size}");
+        eprintln!(":: Current chunk size: {max_chunk_size}");
         eprintln!(":: Chunk count: {}", chunk_paths.len());
     }
 
@@ -263,10 +259,7 @@ pub fn evaluate_chunked<T: DeserializeOwned + std::marker::Send>(
             // manner. Though this shouldn't happen.
             //
             evaluate_chunk::<T>(chunk_path, &evaluation_arguments, options).unwrap_or_else(|err| {
-                panic!(
-                    "Unexpected error while handling chunk {} ({err})",
-                    chunk_path
-                )
+                panic!("Unexpected error while handling chunk {chunk_path} ({err})")
             })
         })
         .reduce(

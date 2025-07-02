@@ -21,7 +21,7 @@ pub fn log_command(cmd: &Command) {
                 None => first.to_string(),
                 // Multi-line
                 Some(_) => {
-                    format!("{}…", first)
+                    format!("{first}…")
                 }
             }
         })

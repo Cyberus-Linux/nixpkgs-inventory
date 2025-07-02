@@ -227,7 +227,7 @@ fn main() -> Result<(), String> {
                 .iter()
                 .map(|input| {
                     let file = File::open(input)
-                        .unwrap_or_else(|_| panic!("Could not open input {}", input));
+                        .unwrap_or_else(|_| panic!("Could not open input {input}"));
                     let reader = BufReader::new(file);
 
                     attribute_matchers::extract_derivations(&subcommand_args.input_format, reader)
