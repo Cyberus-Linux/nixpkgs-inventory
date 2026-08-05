@@ -1,6 +1,7 @@
 { lib
 , pkgs
-, src ? builtins.fetchGit ../..
+# Allow to be used as flake input.
+, src ? if builtins.pathExists ../../.git then builtins.fetchGit ../.. else ../..
 , nix ? pkgs.nix
 }:
 
