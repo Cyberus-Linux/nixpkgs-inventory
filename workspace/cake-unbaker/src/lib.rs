@@ -2,6 +2,7 @@ use cu_lib_nix::nix;
 use nix::AttributePath;
 
 pub mod attribute_matchers;
+pub mod flake;
 
 /// Converts a list of attribute paths into a prettier format than either `to_string` and
 /// `to_string_pretty`.

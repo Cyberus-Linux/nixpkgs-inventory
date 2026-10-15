@@ -23,6 +23,12 @@ pub const COMMAND_NIX_STORE: &str = match option_env!("COMMAND_NIX_STORE") {
     None => "nix-store",
 };
 
+// Allow hardcoding a specific `nix` at build-time, obviating the need for a wrapper.
+pub const COMMAND_NIX: &str = match option_env!("COMMAND_NIX") {
+    Some(v) => v,
+    None => "nix",
+};
+
 /// Used to better convey intent.
 pub type StorePath = String;
 

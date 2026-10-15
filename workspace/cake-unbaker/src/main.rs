@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::BufReader;
 
-use cake_unbaker::attribute_matchers;
+use cake_unbaker::{attribute_matchers, flake};
 use cu_ingest_to_db::database;
 use cu_lib_nix::nix;
 use nix::AttributePath;
@@ -48,6 +48,23 @@ enum Commands {
     /// properly, but a package that was aliased and its attribute renamed may map to the older
     /// name, depending on the timeline and luck.
     GetAttributes(GetAttributes),
+
+    /// List the attributes used from Nixpkgs by a flake output.
+    ///
+    /// This command is self-contained and will index the relevant Nixpkgs automatically.
+    GetFlakeAttributes {
+        #[arg(long)]
+        output_format: AttributesOutputFormats,
+
+        /// Nixpkgs used by the flake output, when it can't be determined automatically.
+        ///
+        /// See `cake-unbaker pkgs store-path` for allowed reference types.
+        #[arg(long)]
+        nixpkgs: Option<nix::SourceReference>,
+
+        /// Flake output to list the attributes of, e.g. `.#nixosConfigurations.host.config.system.build.toplevel`.
+        flake_ref: String,
+    },
 }
 
 #[derive(Debug, Clone, clap::ValueEnum)]
@@ -121,7 +138,109 @@ enum PkgsCommands {
     StorePath { reference: nix::SourceReference },
 }
 
-fn main() -> Result<(), String> {
+/// Index the given package sets into the database.
+fn index(database: &String, references: &[nix::SourceReference]) -> Result<(), String> {
+    let db = database::open(database).expect("Unexpected error while opening the database.");
+
+    eprintln!(":: Normalizing references...");
+    let mut new_drvs = Vec::new();
+    let paths: Vec<_> = references
+        .iter()
+        .map(|reference| {
+            eprintln!("   {reference}");
+            let path = nix::normalized_add_to_store(reference).unwrap();
+            eprintln!("   Normalized to: {path}");
+            (reference, path)
+        })
+        .collect();
+
+    eprintln!("\n:: Evaluating references...");
+    for (_reference, path) in paths {
+        // First check if the database already knows about the (normalized) store path.
+        if db.has_evaluation(&path) {
+            eprintln!(
+                "    ← Skipping evaluation for {}. Already in database.",
+                &path
+            );
+            continue;
+        }
+        eprintln!("    → Evaluating {path}...");
+
+        let instantiate_options = nix::cli::NixInstantiateOptions {
+            read_write_mode: Some(true),
+            ..nix::cli::NixInstantiateOptions::default()
+        };
+
+        let expression_input = nix::cli::NixCliExpression::Path(Some(path.clone()));
+        let expression_arguments = {
+            let mut args = nix::cli::NixCliExpressionArguments::new();
+            args.insert(
+                "config".to_string(),
+                "{ allowAliases = false; allowUnfree = true; }".to_string(),
+            );
+            args.insert(
+                "currentSystem".to_string(),
+                "builtins.currentSystem".to_string(),
+            );
+            // FIXME: internalize handling filter/recurse in chunked_eval
+            args.insert(
+                "filter".to_string(),
+                "value: builtins.isAttrs value && value ? drvPath".to_string(),
+            );
+            args.insert(
+                "recurse".to_string(),
+                "value: (value.recurseForDerivations or false) != false".to_string(),
+            );
+            args
+        };
+
+        let expression_fragment = cu_fast_eval::nix::build_nix_cli_import_semantics_fragment(
+            &expression_input,
+            &expression_arguments,
+        )?;
+
+        let results = cu_fast_eval::nix::evaluate_chunked(
+            cu_fast_eval::nix::DEFAULT_MAX_ALLOWABLE_PER_CHUNK,
+            &expression_fragment,
+            &expression_arguments,
+            &instantiate_options,
+        )?;
+
+        new_drvs.append(&mut cu_ingest_to_db::ingest_evaluation(&db, results, &path));
+    }
+
+    Ok(())
+}
+
+/// Writes the attributes matched from the given paths in the requested format.
+fn write_attributes<'a>(
+    output: Box<dyn std::io::Write>,
+    output_format: &AttributesOutputFormats,
+    database: &String,
+    paths: impl Iterator<Item = &'a nix::StorePath>,
+) {
+    let matcher = attribute_matchers::Matcher::with_database(database);
+    let results = matcher.find_from_paths(paths);
+
+    match output_format {
+        AttributesOutputFormats::Raw => {
+            serde_json::to_writer_pretty(output, &results)
+                .expect("Unexpected error while producing raw output");
+        }
+        AttributesOutputFormats::OnlyAttributePaths => {
+            let results: BTreeSet<AttributePath> = results.into_values().flatten().collect();
+            let mut output = output;
+            output
+                .write_fmt(format_args!(
+                    "{}",
+                    cake_unbaker::to_attribute_paths_json(results.iter())
+                ))
+                .expect("Unexpected error while adding to store...");
+        }
+    };
+}
+
+fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let mut output: Box<dyn std::io::Write> = match cli.output {
         Some(path) => Box::new(std::fs::File::create(&path).unwrap()),
@@ -141,87 +260,15 @@ fn main() -> Result<(), String> {
             PkgsCommands::Index {
                 database,
                 references,
-            } => {
-                let db =
-                    database::open(database).expect("Unexpected error while opening the database.");
-
-                eprintln!(":: Normalizing references...");
-                let mut new_drvs = Vec::new();
-                let paths: Vec<_> = references
-                    .iter()
-                    .map(|reference| {
-                        eprintln!("   {reference}");
-                        let path = nix::normalized_add_to_store(reference).unwrap();
-                        eprintln!("   Normalized to: {path}");
-                        (reference, path)
-                    })
-                    .collect();
-
-                eprintln!("\n:: Evaluating references...");
-                for (_reference, path) in paths {
-                    // First check if the database already knows about the (normalized) store path.
-                    if db.has_evaluation(&path) {
-                        eprintln!(
-                            "    ← Skipping evaluation for {}. Already in database.",
-                            &path
-                        );
-                        continue;
-                    }
-                    eprintln!("    → Evaluating {path}...");
-
-                    let instantiate_options = nix::cli::NixInstantiateOptions {
-                        read_write_mode: Some(true),
-                        ..nix::cli::NixInstantiateOptions::default()
-                    };
-
-                    let expression_input = nix::cli::NixCliExpression::Path(Some(path.clone()));
-                    let expression_arguments = {
-                        let mut args = nix::cli::NixCliExpressionArguments::new();
-                        args.insert(
-                            "config".to_string(),
-                            "{ allowAliases = false; allowUnfree = true; }".to_string(),
-                        );
-                        args.insert(
-                            "currentSystem".to_string(),
-                            "builtins.currentSystem".to_string(),
-                        );
-                        // FIXME: internalize handling filter/recurse in chunked_eval
-                        args.insert(
-                            "filter".to_string(),
-                            "value: builtins.isAttrs value && value ? drvPath".to_string(),
-                        );
-                        args.insert(
-                            "recurse".to_string(),
-                            "value: (value.recurseForDerivations or false) != false".to_string(),
-                        );
-                        args
-                    };
-
-                    let expression_fragment =
-                        cu_fast_eval::nix::build_nix_cli_import_semantics_fragment(
-                            &expression_input,
-                            &expression_arguments,
-                        )?;
-
-                    let results = cu_fast_eval::nix::evaluate_chunked(
-                        cu_fast_eval::nix::DEFAULT_MAX_ALLOWABLE_PER_CHUNK,
-                        &expression_fragment,
-                        &expression_arguments,
-                        &instantiate_options,
-                    )?;
-
-                    new_drvs.append(&mut cu_ingest_to_db::ingest_evaluation(&db, results, &path));
-                }
-            }
+            } => index(database, references).map_err(anyhow::Error::msg)?,
             PkgsCommands::StorePath { reference } => {
+                let path = nix::normalized_add_to_store(reference).map_err(anyhow::Error::msg)?;
                 output
-                    .write_fmt(format_args!("{}", nix::normalized_add_to_store(reference)?))
+                    .write_fmt(format_args!("{path}"))
                     .expect("Unexpected error while adding to store...");
             }
         },
         Commands::GetAttributes(subcommand_args) => {
-            let matcher = attribute_matchers::Matcher::with_database(&subcommand_args.database);
-
             let paths = subcommand_args
                 .inputs
                 .iter()
@@ -238,24 +285,30 @@ fn main() -> Result<(), String> {
                 })
                 .expect("No input produced from inputs?");
 
-            let results = matcher.find_from_paths(paths.iter());
+            write_attributes(
+                output,
+                &subcommand_args.output_format,
+                &subcommand_args.database,
+                paths.iter(),
+            );
+        }
+        Commands::GetFlakeAttributes {
+            output_format,
+            nixpkgs,
+            flake_ref,
+        } => {
+            let database = &flake::database_path()?;
 
-            match subcommand_args.output_format {
-                AttributesOutputFormats::Raw => {
-                    serde_json::to_writer_pretty(output, &results)
-                        .expect("Unexpected error while producing raw output");
-                }
-                AttributesOutputFormats::OnlyAttributePaths => {
-                    let results: BTreeSet<AttributePath> =
-                        results.into_values().flatten().collect();
-                    output
-                        .write_fmt(format_args!(
-                            "{}",
-                            cake_unbaker::to_attribute_paths_json(results.iter())
-                        ))
-                        .expect("Unexpected error while adding to store...");
-                }
+            let nixpkgs = match nixpkgs {
+                Some(nixpkgs) => nixpkgs.clone(),
+                None => flake::nixpkgs_for(flake_ref)?,
             };
+            index(database, &[nixpkgs]).map_err(anyhow::Error::msg)?;
+
+            let drv = flake::derivation_path(flake_ref)?;
+            let paths = flake::requisites(&drv)?;
+
+            write_attributes(output, output_format, database, paths.iter());
         }
     };
 
