@@ -381,6 +381,8 @@ Some notes about the setup.
 
 ### Organization
 
+The Rust code is a Cargo workspace found in `workspace`.
+
 The Nix expressions used to build this project are found in `support/nix`.
 
 The `default.nix` expression is the entrypoint, used for `nix-build` or importing.
