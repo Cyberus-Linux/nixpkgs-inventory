@@ -1,4 +1,4 @@
-/* <cu-lib-nix/src/nix/normalize-to-store.nix> */
+# <cu-lib-nix/src/nix/normalize-to-store.nix>
 # The previous line is shown when the VERBOSE flag is used.
 #
 # Normalize source reference as store paths
@@ -23,32 +23,29 @@
 { reference }:
 
 # break infrec
-let arg'reference' = reference; in
+let
+  arg'reference' = reference;
+in
 
 let
   inherit (builtins.fromJSON arg'reference')
     reference
     reference_type
-  ;
+    ;
 
   reference_path =
-    if (builtins.match "^/.*" reference) == [] then
-      /. + reference
-    else
-      ./. + "/${reference}"
-  ;
+    if (builtins.match "^/.*" reference) == [ ] then /. + reference else ./. + "/${reference}";
 in
 
 if reference_type == "url" then
   builtins.abort "TODO: URL support not implemented yet."
+else if builtins.pathExists (reference_path + "/.git") then
+  builtins.fetchGit {
+    url = reference_path;
+    shallow = true;
+  }
 else
-  if builtins.pathExists ( reference_path + "/.git" ) then
-    builtins.fetchGit {
-      url = reference_path;
-      shallow = true;
-    }
-  else
-    builtins.path {
-      name = "source";
-      path = reference_path;
-    }
+  builtins.path {
+    name = "source";
+    path = reference_path;
+  }
