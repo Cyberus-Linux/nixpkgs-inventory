@@ -93,7 +93,7 @@ impl AttributesDatabase {
         connection.execute_batch(DATABASE_SCHEMA)?;
         connection.pragma_update(None, "auto_vacuum", "none")?;
         connection.pragma_update(None, "count_changes", false)?;
-        connection.pragma_update(None, "journal_mode", "memory")?;
+        connection.pragma_update(None, "journal_mode", "wal")?;
         connection.pragma_update(None, "synchronous", "off")?;
         connection.pragma_update(None, "temp_store", "memory")?;
 
@@ -103,6 +103,20 @@ impl AttributesDatabase {
         Ok(AttributesDatabase {
             connection: connection.into(),
         })
+    }
+
+    /// Runs `f` within a database transaction.
+    ///
+    /// The transaction is committed when `f` succeeds, and rolled back when it fails.
+    pub fn transaction<T, E: From<rusqlite::Error>>(
+        &self,
+        f: impl FnOnce() -> Result<T, E>,
+    ) -> Result<T, E> {
+        self.connection.lock().unwrap().execute_batch("BEGIN")?;
+        let result = f();
+        let end = if result.is_ok() { "COMMIT" } else { "ROLLBACK" };
+        self.connection.lock().unwrap().execute_batch(end)?;
+        result
     }
 
     pub fn query_map<T, P: rusqlite::Params, F: FnMut(&rusqlite::Row<'_>) -> Result<T>>(

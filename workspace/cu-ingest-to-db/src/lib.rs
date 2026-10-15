@@ -82,31 +82,41 @@ pub mod derivation {
 /// references data.
 ///
 /// Run `resolve_derivation_references` on the returned value after ingesting.
+///
+/// The evaluation is ingested in a single transaction, so an interrupted ingestion does not
+/// leave a partial evaluation in the database.
 pub fn ingest_evaluation(
     conn: &database::AttributesDatabase,
     results: evaluation::Results<derivation::Info>,
     id: &String,
 ) -> Vec<nix::StorePath> {
+    conn.transaction(|| insert_evaluation(conn, results, id))
+        .expect("Unable to ingest the evaluation into the database")
+}
+
+fn insert_evaluation(
+    conn: &database::AttributesDatabase,
+    results: evaluation::Results<derivation::Info>,
+    id: &String,
+) -> rusqlite::Result<Vec<nix::StorePath>> {
     let mut drvs_without_references_data = Vec::new();
 
     let exists = 0
-        == conn
-            .insert(
-                database::InsertQuery {
-                    directive: database::InsertDirective::InsertOrIgnore,
-                    table: database::Table::EvaluationInformations,
-                },
-                database::named_params! {
-                    ":id": &id,
-                    ":expression": &serde_json::to_string(&results.evaluation_input).unwrap(),
-                    ":arguments": &serde_json::to_string(&results.evaluation_arguments).unwrap(),
-                },
-            )
-            .expect("Unable to execute insert for evaluation_informations");
+        == conn.insert(
+            database::InsertQuery {
+                directive: database::InsertDirective::InsertOrIgnore,
+                table: database::Table::EvaluationInformations,
+            },
+            database::named_params! {
+                ":id": &id,
+                ":expression": &serde_json::to_string(&results.evaluation_input).unwrap(),
+                ":arguments": &serde_json::to_string(&results.evaluation_arguments).unwrap(),
+            },
+        )?;
 
     if exists {
         eprintln!(":: Skipping data for {}, already in database.", &id);
-        return drvs_without_references_data;
+        return Ok(drvs_without_references_data);
     }
 
     eprintln!(":: Adding data for {}.", &id);
@@ -127,22 +137,19 @@ pub fn ingest_evaluation(
                 ":version": &result.version,
                 ":_raw": &serde_json::to_string(&result).unwrap(),
             },
-        )
-        .expect("Unable to execute insert for evaluation_attributes");
+        )?;
 
         // Insert derivation data if needed...
         let exists = 0
-            == conn
-                .insert(
-                    database::InsertQuery {
-                        directive: database::InsertDirective::InsertOrIgnore,
-                        table: database::Table::Derivations,
-                    },
-                    database::named_params! {
-                        ":path": &result.drv_path
-                    },
-                )
-                .expect("Unable to execute insert for derivation");
+            == conn.insert(
+                database::InsertQuery {
+                    directive: database::InsertDirective::InsertOrIgnore,
+                    table: database::Table::Derivations,
+                },
+                database::named_params! {
+                    ":path": &result.drv_path
+                },
+            )?;
 
         // ... and the derivation's data, when needed.
         // We don't need to re-add the existing `drv` data.
@@ -163,8 +170,7 @@ pub fn ingest_evaluation(
                         ":store_path": &store_path,
                         ":output": &output,
                     },
-                )
-                .expect("Unable to execute insert for derivation_output_paths");
+                )?;
             }
 
             // Some derivations may refer to the same source archive more than once.
@@ -184,8 +190,7 @@ pub fn ingest_evaluation(
                             ":store_path": &store_path,
                             ":type": &input_type,
                         },
-                    )
-                    .expect("Unable to execute insert for derivation input");
+                    )?;
                 }
             }
         }
@@ -193,19 +198,16 @@ pub fn ingest_evaluation(
         // When "derivation inputs" for a derivation exists for a given derivation, skip it.
         // A derivation without any input will checked every time this runs, but these are
         // outliers, and we're more than likely building a fresh database.
-        let has_inputs = conn
-            .query_one(
-                &format!(
-                    "SELECT COUNT(*) FROM {} WHERE derivation_path = :path",
-                    database::Table::DerivationInputDerivations.get_name()
-                ),
-                database::named_params! {
-                    ":path": &result.drv_path,
-                },
-                |row| row.get::<usize, usize>(0),
-            )
-            .unwrap()
-            > 0;
+        let has_inputs = conn.query_one(
+            &format!(
+                "SELECT COUNT(*) FROM {} WHERE derivation_path = :path",
+                database::Table::DerivationInputDerivations.get_name()
+            ),
+            database::named_params! {
+                ":path": &result.drv_path,
+            },
+            |row| row.get::<usize, usize>(0),
+        )? > 0;
 
         // Also make sure we don't re-add something to the list.
         // (Multiple attribute paths can refer to the same derivation)
@@ -215,7 +217,7 @@ pub fn ingest_evaluation(
         }
     }
 
-    drvs_without_references_data
+    Ok(drvs_without_references_data)
 }
 
 /// Resolve referencs for the given derivations, and saves them to the given database.
