@@ -160,7 +160,7 @@ fn index(database: &String, references: &[nix::SourceReference]) -> Result<(), S
         if db.has_evaluation(&path) {
             eprintln!(
                 "    ← Skipping evaluation for {}. Already in database.",
-                &path
+                path
             );
             continue;
         }

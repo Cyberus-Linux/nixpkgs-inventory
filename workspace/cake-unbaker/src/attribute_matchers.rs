@@ -20,8 +20,7 @@ pub mod sbomnix {
             deserializer: D,
         ) -> Result<String, D::Error> {
             let value = <String>::deserialize(deserializer);
-            if value.is_ok() {
-                let value = value.unwrap();
+            if let Ok(value) = value {
                 if value == "CycloneDX" {
                     Ok(value)
                 } else {

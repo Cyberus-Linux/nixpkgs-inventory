@@ -115,11 +115,11 @@ fn insert_evaluation(
         )?;
 
     if exists {
-        eprintln!(":: Skipping data for {}, already in database.", &id);
+        eprintln!(":: Skipping data for {}, already in database.", id);
         return Ok(drvs_without_references_data);
     }
 
-    eprintln!(":: Adding data for {}.", &id);
+    eprintln!(":: Adding data for {}.", id);
     for result in results.data.iter() {
         eprintln!(">> Ingesting {}", result.attribute_to_nix());
         conn.insert(

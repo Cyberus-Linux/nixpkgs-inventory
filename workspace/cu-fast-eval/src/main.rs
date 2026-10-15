@@ -147,9 +147,9 @@ fn main() -> Result<(), String> {
     }
 
     // Got a specific configuration?
-    if args.cores.is_some() {
+    if let Some(cores) = args.cores {
         rayon::ThreadPoolBuilder::new()
-            .num_threads(args.cores.unwrap())
+            .num_threads(cores)
             .build_global()
             .unwrap();
     }
