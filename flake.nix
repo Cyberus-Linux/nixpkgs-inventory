@@ -19,6 +19,7 @@
       ];
 
       imports = [
+        ./nix/lint.nix
         ./nix/cake-unbaker.nix
       ];
     };
