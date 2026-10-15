@@ -53,9 +53,6 @@ enum Commands {
     ///
     /// This command is self-contained and will index the relevant Nixpkgs automatically.
     GetFlakeAttributes {
-        #[arg(long)]
-        output_format: AttributesOutputFormats,
-
         /// Nixpkgs used by the flake output, when it can't be determined automatically.
         ///
         /// See `cake-unbaker pkgs store-path` for allowed reference types.
@@ -67,7 +64,7 @@ enum Commands {
     },
 }
 
-#[derive(Debug, Clone, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
 enum AttributesOutputFormats {
     /// Unstable JSON representation of the attributes matcher data.
     ///
@@ -76,6 +73,8 @@ enum AttributesOutputFormats {
     Raw,
     /// JSON-formatted array of attribute path arrays.
     OnlyAttributePaths,
+    /// Plain list of attributes
+    Plain,
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -214,8 +213,8 @@ fn index(database: &String, references: &[nix::SourceReference]) -> Result<(), S
 
 /// Writes the attributes matched from the given paths in the requested format.
 fn write_attributes<'a>(
-    output: Box<dyn std::io::Write>,
-    output_format: &AttributesOutputFormats,
+    mut output: Box<dyn std::io::Write>,
+    output_format: AttributesOutputFormats,
     database: &String,
     paths: impl Iterator<Item = &'a nix::StorePath>,
 ) {
@@ -229,13 +228,19 @@ fn write_attributes<'a>(
         }
         AttributesOutputFormats::OnlyAttributePaths => {
             let results: BTreeSet<AttributePath> = results.into_values().flatten().collect();
-            let mut output = output;
+
             output
                 .write_fmt(format_args!(
                     "{}",
                     cake_unbaker::to_attribute_paths_json(results.iter())
                 ))
                 .expect("Unexpected error while adding to store...");
+        }
+        AttributesOutputFormats::Plain => {
+            // TODO Add proper quoting if attributes contain special characters.
+            for attr_path in results.into_values().flatten().map(|attr_path| attr_path.join(".")) {
+                writeln!(output, "{attr_path}").expect("Unexpected error while producing plain output");
+            }
         }
     };
 }
@@ -287,13 +292,12 @@ fn main() -> anyhow::Result<()> {
 
             write_attributes(
                 output,
-                &subcommand_args.output_format,
+                subcommand_args.output_format,
                 &subcommand_args.database,
                 paths.iter(),
             );
         }
         Commands::GetFlakeAttributes {
-            output_format,
             nixpkgs,
             flake_ref,
         } => {
@@ -308,7 +312,7 @@ fn main() -> anyhow::Result<()> {
             let drv = flake::derivation_path(flake_ref)?;
             let paths = flake::requisites(&drv)?;
 
-            write_attributes(output, output_format, database, paths.iter());
+            write_attributes(output, AttributesOutputFormats::Plain, database, paths.iter());
         }
     };
 

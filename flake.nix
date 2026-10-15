@@ -21,6 +21,7 @@
       imports = [
         ./nix/lint.nix
         ./nix/cake-unbaker.nix
+        ./nix/default-package.nix
       ];
     };
 }
