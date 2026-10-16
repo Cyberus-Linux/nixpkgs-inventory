@@ -224,8 +224,11 @@ fn write_attributes<'a>(
     let matcher = attribute_matchers::Matcher::with_database(database);
     let results = matcher.find_from_paths(paths);
 
-    if results.is_empty() {
+    let matched_attributes = results.values().flatten().count();
+    if matched_attributes == 0 {
         eprintln!("!! WARNING: No attributes found. Something probably went wrong!");
+    } else {
+        eprintln!("  Matched {matched_attributes} attributes.");
     }
 
     match output_format {
@@ -330,6 +333,7 @@ fn main() -> anyhow::Result<()> {
             };
 
             let paths = flake::requisites(&source_path)?;
+            eprintln!("  Found {} requisites.", paths.len());
 
             write_attributes(
                 output,
