@@ -71,6 +71,9 @@ CREATE TABLE IF NOT EXISTS derivation_output_paths (
 CREATE INDEX IF NOT EXISTS index_derivation_output_paths_derivation_path
   ON derivation_output_paths(derivation_path)
 ;
+CREATE INDEX IF NOT EXISTS index_derivation_output_paths_store_path
+  ON derivation_output_paths(store_path)
+;
 
 -- Store paths (store_path) that are inputs to a given derivation (derivation_path).
 CREATE TABLE IF NOT EXISTS derivation_input_paths (

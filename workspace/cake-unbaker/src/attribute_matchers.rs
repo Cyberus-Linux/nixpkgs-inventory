@@ -177,6 +177,8 @@ impl Matcher {
     }
 
     /// Given a single store path, finds the likeliest attribute path to reach it.
+    ///
+    /// The store path can either be a derivation or an output path of a derivation.
     pub fn find_from_path(&self, path: &StorePath) -> Option<AttributePath> {
         let mut results: Vec<(AttributePath, Option<String>)> = self
             .database
@@ -184,11 +186,16 @@ impl Matcher {
                 r#"
                 SELECT attribute_path, pname
                     FROM evaluation_attributes
-                    WHERE derivation_path = (:derivation_path)
+                    WHERE derivation_path = (:path)
+                       OR derivation_path IN (
+                           SELECT derivation_path
+                               FROM derivation_output_paths
+                               WHERE store_path = (:path)
+                       )
                 ;
             "#,
                 db::named_params! {
-                    ":derivation_path": &path,
+                    ":path": &path,
                 },
                 |row| {
                     let json: String = row.get(0)?;
@@ -242,14 +249,7 @@ impl Matcher {
     ) -> BTreeMap<StorePath, Option<AttributePath>> {
         paths
             .into_iter()
-            .map(|path| {
-                let attribute_path = self.find_from_path(path);
-                if attribute_path.is_some() {
-                    (path.clone(), attribute_path)
-                } else {
-                    (path.clone(), None)
-                }
-            })
+            .map(|path| (path.clone(), self.find_from_path(path)))
             .collect()
     }
 }
