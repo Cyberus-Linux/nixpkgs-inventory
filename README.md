@@ -47,5 +47,7 @@ listed are:
 
 ## More information
 
+For more information on using [Cyberus Linux](https://cyberus-linux.com/) check out [`docs.cyberus-linux.com`](https://docs.cyberus-linux.com/).
+
 For the low-level commands and development documentation, see
 [workspace/README.md](workspace/README.md).
