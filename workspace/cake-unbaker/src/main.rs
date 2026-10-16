@@ -224,11 +224,12 @@ fn write_attributes<'a>(
     let matcher = attribute_matchers::Matcher::with_database(database);
     let results = matcher.find_from_paths(paths);
 
-    let matched_attributes = results.values().flatten().count();
-    if matched_attributes == 0 {
+    // Multiple store paths (e.g. the outputs of one derivation) can map to the same attribute.
+    let attribute_paths: BTreeSet<&AttributePath> = results.values().flatten().collect();
+    if attribute_paths.is_empty() {
         eprintln!("!! WARNING: No attributes found. Something probably went wrong!");
     } else {
-        eprintln!("  Matched {matched_attributes} attributes.");
+        eprintln!("  Matched {} attributes.", attribute_paths.len());
     }
 
     match output_format {
@@ -237,23 +238,17 @@ fn write_attributes<'a>(
                 .expect("Unexpected error while producing raw output");
         }
         AttributesOutputFormats::OnlyAttributePaths => {
-            let results: BTreeSet<AttributePath> = results.into_values().flatten().collect();
-
             output
                 .write_fmt(format_args!(
                     "{}",
-                    cake_unbaker::to_attribute_paths_json(results.iter())
+                    cake_unbaker::to_attribute_paths_json(attribute_paths.into_iter())
                 ))
                 .expect("Unexpected error while adding to store...");
         }
         AttributesOutputFormats::Plain => {
             // TODO Add proper quoting if attributes contain special characters.
-            for attr_path in results
-                .into_values()
-                .flatten()
-                .map(|attr_path| attr_path.join("."))
-            {
-                writeln!(output, "{attr_path}")
+            for attr_path in attribute_paths {
+                writeln!(output, "{}", attr_path.join("."))
                     .expect("Unexpected error while producing plain output");
             }
         }

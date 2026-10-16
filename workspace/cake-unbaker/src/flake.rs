@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::process::{Command, Stdio};
 
-use anyhow::{anyhow, bail, ensure, Context, Result};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use cu_lib_nix::log_command;
 use cu_lib_nix::nix::{self, ReferenceType, SourceReference, StorePath};
 use serde::Deserialize;
@@ -140,8 +140,8 @@ pub fn nixpkgs_for(flake_ref: &str) -> Result<SourceReference> {
                 nixpkgs.path.clone()
             } else {
                 bail!(
-                "{flake} has no `nixpkgs` input, use `--nixpkgs` to provide the Nixpkgs used by {flake_ref}."
-            )
+                    "{flake} has no `nixpkgs` input, use `--nixpkgs` to provide the Nixpkgs used by {flake_ref}."
+                )
             }
         }
     };
