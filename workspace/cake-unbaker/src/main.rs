@@ -61,6 +61,9 @@ enum Commands {
 
         /// Flake output to list the attributes of, e.g. `.#nixosConfigurations.host.config.system.build.toplevel`.
         flake_ref: String,
+
+        #[arg(short = 'b', long)]
+        include_build_deps: bool,
     },
 }
 
@@ -304,19 +307,31 @@ fn main() -> anyhow::Result<()> {
         Commands::GetFlakeAttributes {
             nixpkgs,
             flake_ref,
+            include_build_deps,
         } => {
             let database = &flake::database_path()?;
 
-            let nixpkgs = match nixpkgs {
-                Some(nixpkgs) => nixpkgs.clone(),
-                None => flake::nixpkgs_for(flake_ref)?,
+            let nixpkgs = if let Some(nixpkgs) = nixpkgs {
+                nixpkgs.clone()
+            } else {
+                flake::nixpkgs_for(flake_ref)?
             };
             index(database, &[nixpkgs]).map_err(anyhow::Error::msg)?;
 
-            let drv = flake::derivation_path(flake_ref)?;
-            let paths = flake::requisites(&drv)?;
+            let source_path = if *include_build_deps {
+                flake::derivation_path(flake_ref)?
+            } else {
+                flake::store_path(flake_ref)?
+            };
 
-            write_attributes(output, AttributesOutputFormats::Plain, database, paths.iter());
+            let paths = flake::requisites(&source_path)?;
+
+            write_attributes(
+                output,
+                AttributesOutputFormats::Plain,
+                database,
+                paths.iter(),
+            );
         }
     };
 

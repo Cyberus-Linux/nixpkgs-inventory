@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::process::{Command, Stdio};
 
-use anyhow::{Context, Result, anyhow, bail, ensure};
+use anyhow::{anyhow, bail, ensure, Context, Result};
 use cu_lib_nix::log_command;
 use cu_lib_nix::nix::{self, ReferenceType, SourceReference, StorePath};
 use serde::Deserialize;
@@ -51,6 +51,47 @@ pub fn derivation_path(flake_ref: &str) -> Result<StorePath> {
     run_with_output(cmd)
 }
 
+/// The JSON output of `nix build --json`.
+#[derive(Deserialize, Debug)]
+struct BuildOutput {
+    #[serde(default)]
+    outputs: BTreeMap<String, StorePath>,
+}
+
+/// Given a flake reference returns its store path.
+pub fn store_path(flake_ref: &str) -> Result<StorePath> {
+    eprintln!("\n\n:: Building or fetching store path for {flake_ref}..");
+
+    let build_output_json = {
+        let mut cmd = nix_command();
+
+        // Doesn't work because the path might not exist locally and then
+        // we can't query it with `nix-store`.
+        //
+        // cmd.args(["path-info", flake_ref]);
+        cmd.args(["build", "--no-link", "--json", flake_ref]);
+        run_with_output(cmd)?
+    };
+    let build_outputs: Vec<BuildOutput> = serde_json::from_str(&build_output_json)?;
+
+    ensure!(
+        !build_outputs.is_empty(),
+        "No build outputs from flake reference {flake_ref}?"
+    );
+    ensure!(
+        build_outputs.len() == 1,
+        "More than one build output from flake reference {flake_ref}"
+    );
+
+    let store_path = build_outputs[0]
+        .outputs
+        .get("out")
+        .ok_or_else(|| anyhow!("No `out` output present"))?;
+
+    eprintln!("   → {store_path}");
+    Ok(store_path.clone())
+}
+
 /// Returns the requisites (closure) of the given derivation.
 pub fn requisites(drv: &StorePath) -> Result<Vec<StorePath>> {
     let mut cmd = Command::new(nix::COMMAND_NIX_STORE);
@@ -94,12 +135,14 @@ pub fn nixpkgs_for(flake_ref: &str) -> Result<SourceReference> {
             ]);
             run_with_output(cmd)?
         }
-        _ => if let Some(nixpkgs) = archive(flake)?.inputs.get("nixpkgs") {
-            nixpkgs.path.clone()
-        } else {
-            bail!(
+        _ => {
+            if let Some(nixpkgs) = archive(flake)?.inputs.get("nixpkgs") {
+                nixpkgs.path.clone()
+            } else {
+                bail!(
                 "{flake} has no `nixpkgs` input, use `--nixpkgs` to provide the Nixpkgs used by {flake_ref}."
             )
+            }
         }
     };
 
