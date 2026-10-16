@@ -30,7 +30,7 @@ rustPlatform.buildRustPackage {
   # the tools keep an hermetic reference to the Nix CLI tooling used at build
   # time. See: e.g. `pub const COMMAND_NIX_INSTANTIATE` in the program source.
   COMMAND_NIX = "${nix}/bin/nix";
-  COMMAND_NIX_INSTANTIATE ="${nix}/bin/nix-instantiate";
+  COMMAND_NIX_INSTANTIATE = "${nix}/bin/nix-instantiate";
   COMMAND_NIX_STORE = "${nix}/bin/nix-store";
 
   # Tests evaluate Nix expressions. They need a writable store.

@@ -35,6 +35,9 @@ listed are:
 
 - Packages that are overridden.
 - Packages built from a different Nixpkgs than the detected one.
+- Packages for a different architecture than the machine running the tool.
+  Nixpkgs is only indexed for the current system, so running it on `x86_64-linux`
+  to inventory an `aarch64-linux` configuration does not work (yet).
 
 ## More information
 
