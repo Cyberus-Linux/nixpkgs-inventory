@@ -1,6 +1,6 @@
 { cake-unbaker, writeShellApplication }:
 writeShellApplication {
-  name = "get-flake-attributes";
+  name = "nixpkgs-inventory";
 
   runtimeInputs = [
     cake-unbaker
