@@ -221,6 +221,10 @@ fn write_attributes<'a>(
     let matcher = attribute_matchers::Matcher::with_database(database);
     let results = matcher.find_from_paths(paths);
 
+    if results.is_empty() {
+        eprintln!("!! WARNING: No attributes found. Something probably went wrong!");
+    }
+
     match output_format {
         AttributesOutputFormats::Raw => {
             serde_json::to_writer_pretty(output, &results)
