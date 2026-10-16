@@ -1,5 +1,6 @@
 {
   lib,
+  stdenv,
   rustPlatform,
   pkg-config,
   sqlite,
@@ -34,6 +35,8 @@ rustPlatform.buildRustPackage {
   COMMAND_NIX_STORE = "${nix}/bin/nix-store";
 
   # Tests evaluate Nix expressions. They need a writable store.
+  # The local store inside the build sandbox is untested on macOS.
+  doCheck = stdenv.hostPlatform.system != "aarch64-darwin";
   preCheck = ''
     export NIX_REMOTE="local?root=$PWD"
     "$COMMAND_NIX_INSTANTIATE" --eval --expr '{}'
