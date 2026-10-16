@@ -140,6 +140,9 @@ enum PkgsCommands {
     StorePath { reference: nix::SourceReference },
 }
 
+/// Systems the package sets are indexed for.
+const INDEXED_SYSTEMS: [&str; 2] = ["x86_64-linux", "aarch64-linux"];
+
 /// Index the given package sets into the database.
 fn index(database: &String, references: &[nix::SourceReference]) -> Result<(), String> {
     let db = database::open(database).expect("Unexpected error while opening the database.");
@@ -174,40 +177,55 @@ fn index(database: &String, references: &[nix::SourceReference]) -> Result<(), S
         };
 
         let expression_input = nix::cli::NixCliExpression::Path(Some(path.clone()));
-        let expression_arguments = {
-            let mut args = nix::cli::NixCliExpressionArguments::new();
-            args.insert(
-                "config".to_string(),
-                "{ allowAliases = false; allowUnfree = true; }".to_string(),
-            );
-            args.insert(
-                "currentSystem".to_string(),
-                "builtins.currentSystem".to_string(),
-            );
-            // FIXME: internalize handling filter/recurse in chunked_eval
-            args.insert(
-                "filter".to_string(),
-                "value: builtins.isAttrs value && value ? drvPath".to_string(),
-            );
-            args.insert(
-                "recurse".to_string(),
-                "value: (value.recurseForDerivations or false) != false".to_string(),
-            );
-            args
-        };
 
-        let expression_fragment = cu_fast_eval::nix::build_nix_cli_import_semantics_fragment(
-            &expression_input,
-            &expression_arguments,
-        )?;
+        // Evaluate once per system and ingest everything as a single evaluation.
+        let mut results: Option<cu_fast_eval::evaluation::Results<_>> = None;
+        for system in INDEXED_SYSTEMS {
+            eprintln!("      for {system}...");
 
-        let results = cu_fast_eval::nix::evaluate_chunked(
-            cu_fast_eval::nix::DEFAULT_MAX_ALLOWABLE_PER_CHUNK,
-            &expression_fragment,
-            &expression_arguments,
-            &instantiate_options,
-        )?;
+            let expression_arguments = {
+                let mut args = nix::cli::NixCliExpressionArguments::new();
+                args.insert(
+                    "config".to_string(),
+                    "{ allowAliases = false; allowUnfree = true; }".to_string(),
+                );
+                args.insert("system".to_string(), format!("\"{system}\""));
+                // FIXME: internalize handling filter/recurse in chunked_eval
+                args.insert(
+                    "filter".to_string(),
+                    "value: builtins.isAttrs value && value ? drvPath".to_string(),
+                );
+                args.insert(
+                    "recurse".to_string(),
+                    "value: (value.recurseForDerivations or false) != false".to_string(),
+                );
+                args
+            };
 
+            let expression_fragment = cu_fast_eval::nix::build_nix_cli_import_semantics_fragment(
+                &expression_input,
+                &expression_arguments,
+            )?;
+
+            let mut system_results = cu_fast_eval::nix::evaluate_chunked(
+                cu_fast_eval::nix::DEFAULT_MAX_ALLOWABLE_PER_CHUNK,
+                &expression_fragment,
+                &expression_arguments,
+                &instantiate_options,
+            )?;
+
+            match &mut results {
+                None => results = Some(system_results),
+                Some(results) => {
+                    results.data.append(&mut system_results.data);
+                    results
+                        .attributes_with_errors
+                        .append(&mut system_results.attributes_with_errors);
+                }
+            }
+        }
+
+        let results = results.expect("INDEXED_SYSTEMS must not be empty");
         new_drvs.append(&mut cu_ingest_to_db::ingest_evaluation(&db, results, &path));
     }
 

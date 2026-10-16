@@ -19,6 +19,11 @@ The attributes are printed to standard output, one per line.
 By default, only runtime dependencies are listed. Add `--include-build-deps`
 (`-b`) to also list everything needed to build the output.
 
+Getting the runtime dependencies requires building the output. If its
+architecture differs from the machine running the tool, the output must
+either be fully built and available from a binary cache, or you need a remote
+builder for its architecture.
+
 ### Which Nixpkgs is used
 
 For NixOS configurations, the Nixpkgs the configuration was evaluated with is
@@ -35,9 +40,10 @@ listed are:
 
 - Packages that are overridden.
 - Packages built from a different Nixpkgs than the detected one.
-- Packages for a different architecture than the machine running the tool.
-  Nixpkgs is only indexed for the current system, so running it on `x86_64-linux`
-  to inventory an `aarch64-linux` configuration does not work (yet).
+- Packages for systems other than `x86_64-linux` and `aarch64-linux`, such as
+  macOS (`aarch64-darwin`). Nixpkgs is only indexed for these two systems.
+- Cross-compiled packages, e.g. an `aarch64-linux` configuration built on
+  `x86_64-linux` via `pkgsCross`.
 
 ## More information
 
