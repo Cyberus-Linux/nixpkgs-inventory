@@ -245,8 +245,13 @@ fn write_attributes<'a>(
         }
         AttributesOutputFormats::Plain => {
             // TODO Add proper quoting if attributes contain special characters.
-            for attr_path in results.into_values().flatten().map(|attr_path| attr_path.join(".")) {
-                writeln!(output, "{attr_path}").expect("Unexpected error while producing plain output");
+            for attr_path in results
+                .into_values()
+                .flatten()
+                .map(|attr_path| attr_path.join("."))
+            {
+                writeln!(output, "{attr_path}")
+                    .expect("Unexpected error while producing plain output");
             }
         }
     };
