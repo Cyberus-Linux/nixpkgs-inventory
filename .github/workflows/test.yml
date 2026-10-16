@@ -1,0 +1,26 @@
+name: "Test"
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  merge_group:
+  workflow_dispatch:            # For manual runs on branches
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: samueldr/lix-gha-installer-action@38852f089fdd2f5aabeec42c59c8d180bb8a15e9
+        with:
+          extra_nix_config: |
+            keep-env-derivations = true
+            keep-outputs = true
+            extra-trusted-public-keys = ctrl-os:baPzGxj33zp/P+GAIJXsr8ss9Law+qEEFViX1+flbv8=
+            extra-substituters = https://cache.cyberus-linux.com/
+      - name: Run all tests
+        run: nix -L flake check
