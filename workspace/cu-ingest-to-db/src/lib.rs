@@ -155,7 +155,7 @@ fn insert_evaluation(
         // We don't need to re-add the existing `drv` data.
         // `drv` data for a given `drv` is the same, whichever Nixpkgs produced it.
         if !exists {
-            println!("++ drv: {}", result.drv_path);
+            eprintln!("++ drv: {}", result.drv_path);
 
             // Save output paths for a given drv.
             for (output, store_path) in &result.outputs {
