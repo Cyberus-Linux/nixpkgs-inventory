@@ -87,16 +87,20 @@ pub fn nixpkgs_for(flake_ref: &str) -> Result<SourceReference> {
             cmd.args([
                 "eval",
                 "--raw",
+                // Reduces execution time on my system from 4.5s to 1s.
+                "--apply",
+                "builtins.toString",
                 &format!("{flake}#nixosConfigurations.{name}.pkgs.path"),
             ]);
             run_with_output(cmd)?
         }
-        _ => match archive(flake)?.inputs.remove("nixpkgs") {
-            Some(nixpkgs) => nixpkgs.path,
-            None => bail!(
+        _ => if let Some(nixpkgs) = archive(flake)?.inputs.get("nixpkgs") {
+            nixpkgs.path.clone()
+        } else {
+            bail!(
                 "{flake} has no `nixpkgs` input, use `--nixpkgs` to provide the Nixpkgs used by {flake_ref}."
-            ),
-        },
+            )
+        }
     };
 
     Ok(SourceReference {
